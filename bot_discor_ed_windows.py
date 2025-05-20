@@ -2,6 +2,7 @@ import discord
 import asyncio
 import os
 import json
+import glob
 from dotenv import load_dotenv
 
 # Configuração: mínimo de materiais entregues para considerar finalização (ex: 80%)
@@ -11,10 +12,16 @@ FINALIZACAO_MINIMA_ENTREGUE = 0.8  # 80%
 load_dotenv()
 TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 CANAL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
-LOG_PATH = os.getenv("LOG_FILE")
 
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
+
+def obter_log_mais_recente():
+    pasta_logs = os.path.expanduser(r"~\Saved Games\Frontier Developments\Elite Dangerous")
+    arquivos = glob.glob(os.path.join(pasta_logs, "Journal.*.log"))
+    if not arquivos:
+        raise FileNotFoundError("Nenhum arquivo de log encontrado.")
+    return max(arquivos, key=os.path.getmtime)
 
 def extrair_ultimas_instalacoes(log_path):
     with open(log_path, 'r', encoding='utf-8') as f:
@@ -99,9 +106,10 @@ async def enviar_atualizacoes():
 
     while not client.is_closed():
         try:
-            instalacoes, eventos = extrair_ultimas_instalacoes(LOG_PATH)
+            log_path = obter_log_mais_recente()
+            instalacoes, eventos = extrair_ultimas_instalacoes(log_path)
 
-            # Verifica quais construction sites ainda estão ativos no log
+            # Construction Sites ainda ativos no log
             construction_sites_atuais = {
                 entry["SignalName"]
                 for entry in eventos
@@ -117,8 +125,6 @@ async def enviar_atualizacoes():
 
                 if nome_instalacao in mensagens_enviadas:
                     mensagem, antigos_materiais = mensagens_enviadas[nome_instalacao]
-
-                    # Se o conteúdo mudou, atualiza
                     if novo_conteudo != formatar_mensagem(nome_instalacao, antigos_materiais):
                         try:
                             await mensagem.edit(content=novo_conteudo)
@@ -132,7 +138,7 @@ async def enviar_atualizacoes():
                     nova_msg = await canal.send(novo_conteudo)
                     mensagens_enviadas[nome_instalacao] = (nova_msg, materiais)
 
-            # Verificar se alguma instalação rastreada desapareceu dos construction sites
+            # Verificar instalações finalizadas
             for nome_instalacao in list(mensagens_enviadas.keys()):
                 if nome_instalacao.startswith("Planetary Construction Site:") and nome_instalacao not in construction_sites_atuais:
                     mensagem, materiais = mensagens_enviadas[nome_instalacao]
