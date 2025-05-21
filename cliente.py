@@ -5,8 +5,12 @@ import json
 import glob
 import time
 import requests
+from dotenv import load_dotenv
 
-API_URL = "https://SEU_PROJETO.onrender.com/logdata" 
+load_dotenv()
+API_ADRESS = os.getenv("API_ADRESS")
+
+API_URL = f"https://{API_ADRESS}.onrender.com/logdata" 
 FINALIZACAO_MINIMA_ENTREGUE = 0.8
 INTERVALO_CHECAGEM = 60  
 
