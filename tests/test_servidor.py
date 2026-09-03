@@ -465,3 +465,28 @@ def test_relato_sem_market_id_usa_o_nome_como_chave(servidor):
     )
 
     assert servidor.deve_publicar(chegando) is False
+
+
+def test_deve_publicar_encontra_registro_reconciliado_pelo_nome(servidor):
+    """Registro reconciliado do canal entra com market_id=None (a mensagem do
+    Discord não carrega o MarketID). Um relato novo chega com market_id e
+    precisa achar esse registro pelo nome — senão deve_publicar trata a obra
+    como nunca vista e a arbitragem zera a cada restart do servidor."""
+    import ed_parser
+
+    reconciliada = ed_parser.instalacao_de_payload(
+        "Planetary Construction Site: X",
+        [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 8}],
+        market_id=None,
+    )
+    servidor.banco.salvar(reconciliada, message_id=1001)
+
+    chegando = ed_parser.instalacao_de_payload(
+        "Planetary Construction Site: X",
+        [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 3}],
+        market_id=555,
+    )
+
+    assert servidor.deve_publicar(chegando) is False, (
+        "relato menos completo que o reconciliado deveria ser ignorado"
+    )

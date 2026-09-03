@@ -179,7 +179,7 @@ def deve_publicar(instalacao):
     N clientes reportando a mesma obra de virarem N apaga-e-reposta por
     minuto no canal.
     """
-    anterior = banco.obter(chave_de(instalacao))
+    anterior = banco.obter(chave_de(instalacao), nome=instalacao.nome)
     if anterior is None:
         return True
     return total_fornecido(instalacao) > total_fornecido(anterior.instalacao)
@@ -215,7 +215,7 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
 
     # O Discord não deixa editar mensagem antiga do jeito que precisamos aqui,
     # então a anterior é apagada e uma nova é postada no lugar.
-    anterior = banco.obter(chave_de(instalacao))
+    anterior = banco.obter(chave_de(instalacao), nome=instalacao.nome)
     if anterior is not None:
         mensagem_antiga = await buscar_mensagem(canal, anterior.message_id)
         if mensagem_antiga is not None:

@@ -145,6 +145,24 @@ def test_reportado_por_vazio_quando_nao_informado(banco):
     assert banco.obter(4251780355).reportado_por == ""
 
 
+def test_obter_por_market_id_cai_para_nome_quando_registro_veio_da_reconciliacao(banco):
+    """Reconciliação (servidor.reconciliar_com_o_canal) semeia o banco com
+    market_id=None, porque a mensagem do Discord não carrega o MarketID.
+    obter(market_id) tem que achar esse registro pelo nome, senão a mensagem
+    antiga nunca é localizada para apagar e fica órfã no canal."""
+    reconciliada = ed_parser.instalacao_de_payload(
+        "Planetary Construction Site: X",
+        [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}],
+        market_id=None,
+    )
+    banco.salvar(reconciliada, message_id=1001)
+
+    registro = banco.obter(555, nome=reconciliada.nome)
+
+    assert registro is not None, "deveria cair para a busca por nome"
+    assert registro.message_id == 1001
+
+
 def test_migra_banco_antigo_sem_as_colunas_novas(tmp_path):
     """Já existe banco em produção sem market_id nem reportado_por."""
     import sqlite3

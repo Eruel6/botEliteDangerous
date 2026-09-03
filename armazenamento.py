@@ -107,14 +107,27 @@ class Armazenamento:
         )
         self._conexao.commit()
 
-    def obter(self, chave):
-        """Procura por market_id quando ``chave`` é número, senão por nome."""
+    def obter(self, chave, nome=None):
+        """Procura por market_id quando ``chave`` é número, senão por nome.
+
+        Quando a busca por market_id não acha nada e ``nome`` foi informado,
+        cai para a busca por nome. Isso cobre o registro que a reconciliação
+        do canal cria com market_id=None (a mensagem do Discord não carrega o
+        MarketID) — sem essa queda, obter(market_id) nunca encontra esse
+        registro e a mensagem antiga fica órfã no canal. `salvar` já garante
+        no máximo uma linha por market_id, então a queda é segura.
+        """
         if isinstance(chave, int):
             linha = self._conexao.execute(
                 "SELECT * FROM instalacoes WHERE market_id = ?", (chave,)
             ).fetchone()
             if linha:
                 return self._para_registro(linha)
+            if nome is not None:
+                linha = self._conexao.execute(
+                    "SELECT * FROM instalacoes WHERE nome = ?", (nome,)
+                ).fetchone()
+                return self._para_registro(linha) if linha else None
             return None
 
         linha = self._conexao.execute(
