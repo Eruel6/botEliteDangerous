@@ -1,0 +1,173 @@
+"""Leitura do Journal do Elite Dangerous: extração de instalações em construção.
+
+O Journal é um arquivo JSON-lines. Dois eventos interessam:
+
+- ``ColonisationConstructionDepot``: traz ``MarketID``, o progresso e a lista
+  ``ResourcesRequired`` com os materiais. Não traz o nome da instalação.
+- ``ApproachSettlement``: traz ``MarketID`` e ``Name``.
+
+O ``MarketID`` é a chave exata que liga os dois.
+"""
+
+import glob
+import json
+import os
+from dataclasses import dataclass, field
+
+NOME_DESCONHECIDO = "Desconhecida"
+PREFIXO_CONSTRUCAO = "Planetary Construction Site:"
+PASTA_JOURNAL_PADRAO = os.path.join("~", "Saved Games", "Frontier Developments", "Elite Dangerous")
+
+
+@dataclass
+class Material:
+    nome: str
+    nome_interno: str
+    requerido: int
+    fornecido: int
+
+    @property
+    def faltando(self):
+        return self.requerido - self.fornecido
+
+    @property
+    def completo(self):
+        return self.fornecido >= self.requerido
+
+
+@dataclass
+class Instalacao:
+    market_id: int
+    nome: str = NOME_DESCONHECIDO
+    materiais: list = field(default_factory=list)
+    progresso: float = 0.0
+    completa: bool = False
+    falhou: bool = False
+    _ordem: int = -1
+
+    @property
+    def porcentagem(self):
+        """Conclusão em 0-100, pela soma das quantidades de material."""
+        total = sum(m.requerido for m in self.materiais)
+        if total == 0:
+            return 0.0
+        return sum(m.fornecido for m in self.materiais) / total * 100
+
+
+def _material(bruto):
+    return Material(
+        nome=bruto.get("Name_Localised", bruto.get("Name", "?")),
+        nome_interno=bruto.get("Name", ""),
+        requerido=bruto.get("RequiredAmount", 0),
+        fornecido=bruto.get("ProvidedAmount", 0),
+    )
+
+
+def _registros(caminho_log):
+    with open(caminho_log, "r", encoding="utf-8") as f:
+        for linha in f:
+            try:
+                yield json.loads(linha)
+            except json.JSONDecodeError:
+                continue
+
+
+def extrair_instalacoes(caminho_log):
+    """Devolve uma ``Instalacao`` por MarketID, com o estado mais recente do log."""
+    por_market = {}
+    nomes = {}
+
+    for ordem, registro in enumerate(_registros(caminho_log)):
+        if not isinstance(registro, dict):
+            continue
+        evento = registro.get("event")
+
+        if evento == "ApproachSettlement":
+            nome = registro.get("Name", "")
+            if nome.startswith(PREFIXO_CONSTRUCAO):
+                nomes[registro.get("MarketID")] = nome
+
+        elif evento == "ColonisationConstructionDepot":
+            market_id = registro.get("MarketID")
+            instalacao = por_market.setdefault(market_id, Instalacao(market_id=market_id))
+            instalacao.materiais = [_material(m) for m in registro.get("ResourcesRequired", [])]
+            instalacao.progresso = registro.get("ConstructionProgress", 0.0)
+            instalacao.completa = registro.get("ConstructionComplete", False)
+            instalacao.falhou = registro.get("ConstructionFailed", False)
+            instalacao._ordem = ordem
+
+    for market_id, instalacao in por_market.items():
+        instalacao.nome = nomes.get(market_id, NOME_DESCONHECIDO)
+
+    return list(por_market.values())
+
+
+def sinais_de_construcao(caminho_log):
+    """Nomes dos Planetary Construction Sites anunciados por FSSSignalDiscovered."""
+    return {
+        r["SignalName"]
+        for r in _registros(caminho_log)
+        if isinstance(r, dict)
+        and r.get("event") == "FSSSignalDiscovered"
+        and r.get("SignalName", "").startswith(PREFIXO_CONSTRUCAO)
+    }
+
+
+def instalacao_de_payload(nome, materiais):
+    """Monta uma ``Instalacao`` a partir do JSON recebido pela API."""
+    return Instalacao(
+        market_id=None,
+        nome=nome,
+        materiais=[_material(m) for m in materiais],
+    )
+
+
+def ultima_instalacao(caminho_log):
+    """A instalação cujo depot foi atualizado por último no log (None se não houver)."""
+    instalacoes = extrair_instalacoes(caminho_log)
+    if not instalacoes:
+        return None
+    return max(instalacoes, key=lambda i: i._ordem)
+
+
+def encontrar_log_mais_recente(pasta=None):
+    """Journal modificado mais recentemente na pasta do jogo (None se não houver)."""
+    if pasta is None:
+        pasta = PASTA_JOURNAL_PADRAO
+    arquivos = glob.glob(os.path.join(os.path.expanduser(pasta), "Journal.*.log"))
+    if not arquivos:
+        return None
+    return max(arquivos, key=os.path.getmtime)
+
+
+def formatar_mensagem_discord(instalacao, porcentagem=None):
+    """Bloco de código para o Discord. ``porcentagem`` é opcional e vai no cabeçalho."""
+    sufixo = f" `{porcentagem}`" if porcentagem is not None else ""
+    linhas = [f"📍 **Materiais para instalação:** `{instalacao.nome}`{sufixo}\n"]
+    linhas.append("```")
+    linhas.append(f"{'Material':<25} | {'Req.':>5} | {'Fornec.':>7} | {'Faltam':>6}")
+    linhas.append("-" * 52)
+    for m in instalacao.materiais:
+        linhas.append(f"{m.nome:<25} | {m.requerido:>5} | {m.fornecido:>7} | {m.faltando:>6}")
+    linhas.append("```")
+    return "\n".join(linhas)
+
+
+def formatar_tabela_terminal(instalacao):
+    """Tabela de largura dinâmica para stdout, como a do parserMaterials original."""
+    cabecalho = ("Material", "Requisitado", "Fornecido", "Faltando")
+    largura_nome = max([len(m.nome) for m in instalacao.materiais] + [len(cabecalho[0])])
+    larguras = (largura_nome, len(cabecalho[1]), len(cabecalho[2]), len(cabecalho[3]))
+
+    linhas = [f"\n📍 Materiais para instalação: {instalacao.nome}\n"]
+    linhas.append(
+        f"{cabecalho[0]:<{larguras[0]}} | {cabecalho[1]:>{larguras[1]}} | "
+        f"{cabecalho[2]:>{larguras[2]}} | {cabecalho[3]:>{larguras[3]}}"
+    )
+    linhas.append("-" * (sum(larguras) + 9))
+    for m in instalacao.materiais:
+        linhas.append(
+            f"{m.nome:<{larguras[0]}} | {m.requerido:>{larguras[1]}} | "
+            f"{m.fornecido:>{larguras[2]}} | {m.faltando:>{larguras[3]}}"
+        )
+    return "\n".join(linhas) + "\n"
