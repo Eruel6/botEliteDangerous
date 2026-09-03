@@ -185,6 +185,20 @@ class _RespostaFalsa:
     reason = "Not Found"
 
 
+class UsuarioFalso:
+    """discord.py devolve ClientUser em client.user e User em message.author:
+    objetos distintos para o mesmo bot, comparáveis só pelo id."""
+
+    def __init__(self, id):
+        self.id = id
+
+    def __eq__(self, outro):
+        return isinstance(outro, UsuarioFalso) and outro.id == self.id
+
+    def __hash__(self):
+        return hash(self.id)
+
+
 class MensagemComConteudo(MensagemFalsa):
     def __init__(self, id, content, author):
         super().__init__()
@@ -196,20 +210,23 @@ class MensagemComConteudo(MensagemFalsa):
 def test_reconstroi_o_estado_lendo_as_proprias_mensagens_do_canal(servidor, tmp_path):
     import ed_parser
 
-    bot = object()
+    bot = UsuarioFalso(42)
     inst = ed_parser.instalacao_de_payload(
         "Planetary Construction Site: Pedder's Forge",
         [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}],
     )
     canal = CanalFalso(
         [
-            MensagemComConteudo(555, ed_parser.formatar_mensagem_discord(inst, "40.0%"), bot),
-            MensagemComConteudo(556, "papo aleatório do canal", object()),
+            MensagemComConteudo(
+                555, ed_parser.formatar_mensagem_discord(inst, "40.0%"), UsuarioFalso(42)
+            ),
+            MensagemComConteudo(556, "papo aleatório do canal", UsuarioFalso(99)),
         ],
         bot=bot,
     )
 
-    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=bot))
+    # autor é outro objeto com o mesmo id, como client.user vs message.author
+    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=UsuarioFalso(42)))
 
     registro = servidor.banco.obter(inst.nome)
     assert registro.message_id == 555
@@ -217,9 +234,9 @@ def test_reconstroi_o_estado_lendo_as_proprias_mensagens_do_canal(servidor, tmp_
 
 
 def test_reconciliacao_ignora_mensagens_de_outros_autores(servidor):
-    canal = CanalFalso([MensagemComConteudo(1, "papo", object())], bot=object())
+    canal = CanalFalso([MensagemComConteudo(1, "papo", UsuarioFalso(99))], bot=UsuarioFalso(42))
 
-    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=object()))
+    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=UsuarioFalso(42)))
 
     assert servidor.banco.listar() == []
 
@@ -227,7 +244,7 @@ def test_reconciliacao_ignora_mensagens_de_outros_autores(servidor):
 def test_reconciliacao_nao_sobrescreve_registro_ja_conhecido(servidor):
     import ed_parser
 
-    bot = object()
+    bot = UsuarioFalso(42)
     inst = ed_parser.instalacao_de_payload(
         "Planetary Construction Site: X",
         [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 10}],

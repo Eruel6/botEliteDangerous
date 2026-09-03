@@ -95,7 +95,9 @@ async def reconciliar_com_o_canal(canal, autor):
     """
     recuperadas = 0
     async for mensagem in canal.history(limit=MENSAGENS_A_VARRER):
-        if mensagem.author is not autor:
+        # client.user e message.author são objetos distintos para o mesmo bot;
+        # o discord.py só os considera iguais pelo id.
+        if mensagem.author.id != autor.id:
             continue
         nome = ed_parser.nome_na_mensagem(mensagem.content)
         if not nome or banco.obter(nome) is not None:
