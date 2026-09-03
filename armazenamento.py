@@ -32,10 +32,17 @@ class Registro:
     message_id: int
     ultima_atualizacao: datetime.datetime
     finalizado: bool
+    reportado_por: str = ""
 
 
 def _agora():
     return datetime.datetime.now(datetime.timezone.utc)
+
+
+COLUNAS_NOVAS = {
+    "market_id": "INTEGER",
+    "reportado_por": "TEXT NOT NULL DEFAULT ''",
+}
 
 
 class Armazenamento:
@@ -46,9 +53,23 @@ class Armazenamento:
         self._conexao = sqlite3.connect(self.caminho)
         self._conexao.row_factory = sqlite3.Row
         self._conexao.execute(ESQUEMA)
+        self._migrar()
         self._conexao.commit()
 
-    def salvar(self, instalacao, message_id, quando=None):
+    def _migrar(self):
+        """Acrescenta colunas que faltam, sem recriar a tabela.
+
+        Já existe banco em produção; recriar perderia o que está lá."""
+        existentes = {
+            l["name"] for l in self._conexao.execute("PRAGMA table_info(instalacoes)")
+        }
+        for coluna, tipo in COLUNAS_NOVAS.items():
+            if coluna not in existentes:
+                self._conexao.execute(
+                    f"ALTER TABLE instalacoes ADD COLUMN {coluna} {tipo}"
+                )
+
+    def salvar(self, instalacao, message_id, quando=None, reportado_por=""):
         materiais = [
             {
                 "Name_Localised": m.nome,
@@ -59,23 +80,36 @@ class Armazenamento:
             for m in instalacao.materiais
         ]
         self._conexao.execute(
-            "INSERT INTO instalacoes (nome, message_id, materiais, ultima_atualizacao, finalizado) "
-            "VALUES (?, ?, ?, ?, 0) "
+            "INSERT INTO instalacoes "
+            "(nome, message_id, materiais, ultima_atualizacao, finalizado, market_id, reportado_por) "
+            "VALUES (?, ?, ?, ?, 0, ?, ?) "
             "ON CONFLICT(nome) DO UPDATE SET "
             "message_id=excluded.message_id, materiais=excluded.materiais, "
-            "ultima_atualizacao=excluded.ultima_atualizacao, finalizado=0",
+            "ultima_atualizacao=excluded.ultima_atualizacao, finalizado=0, "
+            "market_id=excluded.market_id, reportado_por=excluded.reportado_por",
             (
                 instalacao.nome,
                 message_id,
                 json.dumps(materiais, ensure_ascii=False),
                 (quando or _agora()).isoformat(),
+                instalacao.market_id,
+                reportado_por,
             ),
         )
         self._conexao.commit()
 
-    def obter(self, nome):
+    def obter(self, chave):
+        """Procura por market_id quando ``chave`` é número, senão por nome."""
+        if isinstance(chave, int):
+            linha = self._conexao.execute(
+                "SELECT * FROM instalacoes WHERE market_id = ?", (chave,)
+            ).fetchone()
+            if linha:
+                return self._para_registro(linha)
+            return None
+
         linha = self._conexao.execute(
-            "SELECT * FROM instalacoes WHERE nome = ?", (nome,)
+            "SELECT * FROM instalacoes WHERE nome = ?", (chave,)
         ).fetchone()
         return self._para_registro(linha) if linha else None
 
@@ -98,11 +132,15 @@ class Armazenamento:
 
     @staticmethod
     def _para_registro(linha):
+        chaves = linha.keys()
         return Registro(
             instalacao=ed_parser.instalacao_de_payload(
-                linha["nome"], json.loads(linha["materiais"])
+                linha["nome"],
+                json.loads(linha["materiais"]),
+                market_id=linha["market_id"] if "market_id" in chaves else None,
             ),
             message_id=linha["message_id"],
             ultima_atualizacao=datetime.datetime.fromisoformat(linha["ultima_atualizacao"]),
             finalizado=bool(linha["finalizado"]),
+            reportado_por=(linha["reportado_por"] if "reportado_por" in chaves else "") or "",
         )

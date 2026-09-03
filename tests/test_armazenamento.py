@@ -94,3 +94,68 @@ def test_usa_CAMINHO_DB_definido_depois_do_import(monkeypatch, tmp_path):
     arm.Armazenamento().salvar(instalacao(), message_id=1)
 
     assert destino.exists()
+
+
+def instalacao_com_market(market_id=4251780355, nome="Obra A", fornecido=4):
+    inst = ed_parser.instalacao_de_payload(
+        nome, [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": fornecido}],
+        market_id=market_id,
+    )
+    return inst
+
+
+def test_guarda_e_recupera_por_market_id(banco):
+    banco.salvar(instalacao_com_market(), message_id=9, reportado_por="Arthur")
+
+    registro = banco.obter(4251780355)
+
+    assert registro.message_id == 9
+    assert registro.reportado_por == "Arthur"
+    assert registro.instalacao.market_id == 4251780355
+
+
+def test_ainda_recupera_por_nome(banco):
+    banco.salvar(instalacao_com_market(nome="Obra A"), message_id=9)
+
+    assert banco.obter("Obra A").message_id == 9
+
+
+def test_salvar_de_novo_com_o_mesmo_market_id_substitui(banco):
+    banco.salvar(instalacao_com_market(fornecido=4), message_id=1)
+    banco.salvar(instalacao_com_market(fornecido=9), message_id=2)
+
+    assert banco.obter(4251780355).message_id == 2
+    assert len(banco.listar()) == 1
+
+
+def test_reportado_por_vazio_quando_nao_informado(banco):
+    banco.salvar(instalacao_com_market(), message_id=1)
+
+    assert banco.obter(4251780355).reportado_por == ""
+
+
+def test_migra_banco_antigo_sem_as_colunas_novas(tmp_path):
+    """Já existe banco em produção sem market_id nem reportado_por."""
+    import sqlite3
+
+    caminho = str(tmp_path / "antigo.db")
+    conexao = sqlite3.connect(caminho)
+    conexao.execute(
+        "CREATE TABLE instalacoes (nome TEXT PRIMARY KEY, message_id INTEGER NOT NULL, "
+        "materiais TEXT NOT NULL, ultima_atualizacao TEXT NOT NULL, "
+        "finalizado INTEGER NOT NULL DEFAULT 0)"
+    )
+    conexao.execute(
+        "INSERT INTO instalacoes VALUES (?, ?, ?, ?, 0)",
+        ("Obra Antiga", 77, '[{"Name_Localised":"Aço","RequiredAmount":10,"ProvidedAmount":2}]',
+         "2026-09-03T12:00:00+00:00"),
+    )
+    conexao.commit()
+    conexao.close()
+
+    banco = arm.Armazenamento(caminho)
+
+    registro = banco.obter("Obra Antiga")
+    assert registro.message_id == 77, "o dado antigo não pode ser perdido"
+    assert registro.reportado_por == ""
+    assert registro.instalacao.market_id is None
