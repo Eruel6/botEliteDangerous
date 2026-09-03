@@ -1836,7 +1836,7 @@ cliente está rodando.
 
 - [ ] **Step 2: Conferir que o README não tem token real**
 
-Run: `grep -n "mRL5V" README.md`
+Run: `grep -nE "[A-Za-z0-9_-]{40,}" README.md`
 Expected: nenhuma saída
 
 - [ ] **Step 3: Commit**
@@ -1858,5 +1858,5 @@ Depois da Task 10:
 
 - [ ] `.venv/bin/python -m pytest tests/ -q` — todos verdes
 - [ ] `git status --short` — nada não commitado além de `.git-orfao-DELETAR`
-- [ ] `grep -rn "mRL5V" --include="*" . | grep -v "\.env\|\.venv\|\.git/"` — sem saída
+- [ ] `grep -rnE "[A-Za-z0-9_-]{40,}" --include="*" . | grep -v "\.env\|\.venv\|\.git/"` — sem token
 - [ ] Subir o cliente localmente com um `config.txt` de teste e abrir o painel, conferindo que `/config.txt` devolve 404
