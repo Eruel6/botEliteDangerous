@@ -144,7 +144,10 @@ Com cinco clientes reportando a mesma obra, quatro viram no-op — é isso que
 resolve o rate limit, sem lógica de throttling.
 
 O total fornecido só cresce ao longo de uma construção, então "maior total" é
-uma aproximação segura de "mais recente".
+uma aproximação segura de "mais recente". A premissa cairia se uma obra
+reiniciasse no mesmo `MarketID`; o Arthur, que joga isso, confirmou nunca ter
+visto acontecer. Se um dia acontecer, o sintoma é uma mensagem que trava num
+estado antigo e ignora relatos novos.
 
 ### Banco
 
