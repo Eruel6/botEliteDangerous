@@ -157,9 +157,28 @@ async def verificar_finalizacoes():
         await asyncio.sleep(INTERVALO_VERIFICACAO_SEGUNDOS)
 
 
+def total_fornecido(instalacao):
+    return sum(m.fornecido for m in instalacao.materiais)
+
+
+def deve_publicar(instalacao):
+    """Só publica relato estritamente mais completo que o guardado.
+
+    O total fornecido só cresce ao longo de uma construção, então "maior
+    total" é uma aproximação segura de "mais recente". Isso é o que impede
+    N clientes reportando a mesma obra de virarem N apaga-e-reposta por
+    minuto no canal.
+    """
+    chave = instalacao.market_id if instalacao.market_id is not None else instalacao.nome
+    anterior = banco.obter(chave)
+    if anterior is None:
+        return True
+    return total_fornecido(instalacao) > total_fornecido(anterior.instalacao)
+
+
 @app.post("/logdata")
 async def receber_dados(request: Request, x_api_token: str = Header(default=None)):
-    conferir_token(x_api_token)
+    quem = conferir_token(x_api_token)
 
     if not client.is_ready():
         raise HTTPException(status_code=503, detail="Bot do Discord ainda não está pronto.")
@@ -171,15 +190,24 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     if not nome_instalacao or not isinstance(materiais, list):
         raise HTTPException(status_code=400, detail="Dados inválidos.")
 
-    instalacao = ed_parser.instalacao_de_payload(nome_instalacao, materiais)
+    instalacao = ed_parser.instalacao_de_payload(
+        nome_instalacao, materiais, market_id=data.get("market_id")
+    )
+
+    if not deve_publicar(instalacao):
+        return JSONResponse(content={"status": "ignorado"})
+
     porcentagem = f"{instalacao.porcentagem:.1f}%"
-    msg_formatada = ed_parser.formatar_mensagem_discord(instalacao, porcentagem)
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    rodape = f"atualizado por {quem} às {agora.strftime('%H:%M')} UTC"
+    msg_formatada = ed_parser.formatar_mensagem_discord(instalacao, porcentagem, rodape)
 
     canal = client.get_channel(DISCORD_CHANNEL_ID)
 
     # O Discord não deixa editar mensagem antiga do jeito que precisamos aqui,
     # então a anterior é apagada e uma nova é postada no lugar.
-    anterior = banco.obter(nome_instalacao)
+    chave = instalacao.market_id if instalacao.market_id is not None else instalacao.nome
+    anterior = banco.obter(chave)
     if anterior is not None:
         mensagem_antiga = await buscar_mensagem(canal, anterior.message_id)
         if mensagem_antiga is not None:
@@ -189,7 +217,7 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
                 print(f"Erro ao deletar mensagem anterior: {e}")
 
     nova_msg = await canal.send(msg_formatada)
-    banco.salvar(instalacao, message_id=nova_msg.id)
+    banco.salvar(instalacao, message_id=nova_msg.id, reportado_por=quem)
     await adicionar_reacao_check(nova_msg, instalacao.materiais)
 
     return JSONResponse(content={"status": "ok"})

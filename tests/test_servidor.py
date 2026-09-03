@@ -378,3 +378,74 @@ def test_token_vazio_nao_autentica_mesmo_com_nome(monkeypatch, tmp_path):
 
     assert erro.value.status_code == 503
     assert "API_TOKENS" in erro.value.detail
+
+
+def test_total_fornecido_soma_os_materiais(servidor):
+    import ed_parser
+
+    inst = ed_parser.instalacao_de_payload(
+        "Obra",
+        [
+            {"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4},
+            {"Name_Localised": "Alumínio", "RequiredAmount": 20, "ProvidedAmount": 6},
+        ],
+    )
+
+    assert servidor.total_fornecido(inst) == 10
+
+
+def test_relato_menos_completo_e_ignorado(servidor):
+    import ed_parser
+
+    guardado = ed_parser.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 8}],
+        market_id=555,
+    )
+    servidor.banco.salvar(guardado, message_id=1, reportado_por="Arthur")
+
+    chegando = ed_parser.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 3}],
+        market_id=555,
+    )
+
+    assert servidor.deve_publicar(chegando) is False
+
+
+def test_relato_mais_completo_e_publicado(servidor):
+    import ed_parser
+
+    guardado = ed_parser.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 3}],
+        market_id=555,
+    )
+    servidor.banco.salvar(guardado, message_id=1)
+
+    chegando = ed_parser.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 8}],
+        market_id=555,
+    )
+
+    assert servidor.deve_publicar(chegando) is True
+
+
+def test_relato_igual_e_ignorado(servidor):
+    import ed_parser
+
+    inst = ed_parser.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 5}],
+        market_id=555,
+    )
+    servidor.banco.salvar(inst, message_id=1)
+
+    assert servidor.deve_publicar(inst) is False
+
+
+def test_instalacao_nova_sempre_publica(servidor):
+    import ed_parser
+
+    inst = ed_parser.instalacao_de_payload(
+        "Obra Nunca Vista", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 0}],
+        market_id=999,
+    )
+
+    assert servidor.deve_publicar(inst) is True
