@@ -1,0 +1,79 @@
+<!-- painel.html -->
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Cliente Elite Dangerous</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; padding: 24px; background: #14100c; color: #e8dcc8;
+         font: 14px/1.5 ui-monospace, Consolas, monospace; }
+  h1 { font-size: 18px; margin: 0 0 20px; color: #ff8c1a; }
+  .cartoes { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
+  .cartao { background: #1e1813; border: 1px solid #3a2f24; border-radius: 6px;
+            padding: 12px 16px; min-width: 180px; }
+  .rotulo { font-size: 11px; text-transform: uppercase; color: #9a8b76; }
+  .valor { font-size: 16px; margin-top: 4px; }
+  .ok { color: #6ac46a; } .ruim { color: #e05c5c; }
+  table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
+  th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #2b2219; }
+  th { color: #9a8b76; font-weight: normal; font-size: 11px; text-transform: uppercase; }
+  .erro { color: #e05c5c; }
+  .vazio { color: #6b5d4c; font-style: italic; }
+</style>
+</head>
+<body>
+<h1>Cliente Elite Dangerous</h1>
+
+<div class="cartoes">
+  <div class="cartao"><div class="rotulo">Conexão</div><div class="valor" id="conexao">—</div></div>
+  <div class="cartao"><div class="rotulo">Último envio aceito</div><div class="valor" id="envio">—</div></div>
+  <div class="cartao"><div class="rotulo">Última leitura</div><div class="valor" id="leitura">—</div></div>
+</div>
+
+<div class="cartao" style="margin-bottom:24px">
+  <div class="rotulo">Journal em uso</div><div class="valor" id="journal">—</div>
+</div>
+
+<h2 style="font-size:13px;color:#9a8b76;text-transform:uppercase">Instalações detectadas</h2>
+<table><thead><tr><th>Instalação</th><th>Progresso</th><th>Materiais faltando</th><th>Unidades</th></tr></thead>
+<tbody id="instalacoes"></tbody></table>
+
+<h2 style="font-size:13px;color:#9a8b76;text-transform:uppercase">Erros recentes</h2>
+<table><thead><tr><th>Quando</th><th>O quê</th></tr></thead><tbody id="erros"></tbody></table>
+
+<script>
+const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
+
+function pintar(d) {
+  const status = d.ultimo_status_http;
+  const conexao = document.getElementById("conexao");
+  if (status === null)      { conexao.textContent = "sem envio ainda"; conexao.className = "valor"; }
+  else if (status >= 200 && status < 300) { conexao.textContent = "ok (" + status + ")"; conexao.className = "valor ok"; }
+  else                      { conexao.textContent = "erro " + status;  conexao.className = "valor ruim"; }
+
+  document.getElementById("envio").textContent   = hora(d.ultimo_envio_ok);
+  document.getElementById("leitura").textContent = hora(d.ultima_leitura);
+  document.getElementById("journal").textContent = d.journal_atual || "nenhum encontrado";
+
+  const inst = document.getElementById("instalacoes");
+  inst.innerHTML = d.instalacoes.length
+    ? d.instalacoes.map(i => `<tr><td>${i.nome}</td><td>${i.porcentagem}%</td>` +
+        `<td>${i.materiais_faltando}</td><td>${i.total_faltando}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="vazio">nenhuma obra no Journal atual</td></tr>`;
+
+  const erros = document.getElementById("erros");
+  erros.innerHTML = d.erros.length
+    ? d.erros.map(e => `<tr><td>${hora(e.quando)}</td><td class="erro">${e.mensagem}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="vazio">nenhum erro</td></tr>`;
+}
+
+async function atualizar() {
+  try { pintar(await (await fetch("/estado.json")).json()); }
+  catch (e) { document.getElementById("conexao").textContent = "painel sem resposta"; }
+}
+atualizar();
+setInterval(atualizar, 5000);
+</script>
+</body>
+</html>
