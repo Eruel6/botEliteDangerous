@@ -73,7 +73,14 @@ def test_mensagem_do_discord_inclui_porcentagem_quando_informada():
     assert cabecalho.endswith("`Planetary Construction Site: Pedder's Forge` `100.0%`")
 
 
-def test_mensagem_do_discord_e_codificavel_em_utf8():
+def test_mensagem_do_discord_e_uma_string_bem_formada():
+    """Invariante do formatador: a saída codifica em UTF-8 sem surrogates soltos.
+
+    Não é regressão de bug conhecido: o discord.py serializa em JSON, e o
+    json.dumps escapa surrogates soltos como \\uXXXX, então eles chegariam
+    corretos ao Discord de qualquer forma. É só uma garantia barata de que a
+    string vale para qualquer outro consumidor (log, arquivo, terminal).
+    """
     a, _ = ed.extrair_instalacoes(BASICO)
     ed.formatar_mensagem_discord(a).encode("utf-8")
 
