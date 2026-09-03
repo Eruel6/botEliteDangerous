@@ -161,6 +161,16 @@ def total_fornecido(instalacao):
     return sum(m.fornecido for m in instalacao.materiais)
 
 
+def chave_de(instalacao):
+    """Identidade da obra: o MarketID quando existe, senão o nome.
+
+    Os dois usos precisam concordar — um decide publicar ou ignorar, o outro
+    decide qual mensagem apagar. Se divergirem, o servidor compara contra um
+    registro e apaga a mensagem de outro.
+    """
+    return instalacao.market_id if instalacao.market_id is not None else instalacao.nome
+
+
 def deve_publicar(instalacao):
     """Só publica relato estritamente mais completo que o guardado.
 
@@ -169,8 +179,7 @@ def deve_publicar(instalacao):
     N clientes reportando a mesma obra de virarem N apaga-e-reposta por
     minuto no canal.
     """
-    chave = instalacao.market_id if instalacao.market_id is not None else instalacao.nome
-    anterior = banco.obter(chave)
+    anterior = banco.obter(chave_de(instalacao))
     if anterior is None:
         return True
     return total_fornecido(instalacao) > total_fornecido(anterior.instalacao)
@@ -206,8 +215,7 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
 
     # O Discord não deixa editar mensagem antiga do jeito que precisamos aqui,
     # então a anterior é apagada e uma nova é postada no lugar.
-    chave = instalacao.market_id if instalacao.market_id is not None else instalacao.nome
-    anterior = banco.obter(chave)
+    anterior = banco.obter(chave_de(instalacao))
     if anterior is not None:
         mensagem_antiga = await buscar_mensagem(canal, anterior.message_id)
         if mensagem_antiga is not None:

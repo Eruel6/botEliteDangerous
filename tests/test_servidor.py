@@ -449,3 +449,19 @@ def test_instalacao_nova_sempre_publica(servidor):
     )
 
     assert servidor.deve_publicar(inst) is True
+
+
+def test_relato_sem_market_id_usa_o_nome_como_chave(servidor):
+    """Cliente antigo (sem MarketID no payload) ainda precisa ser arbitrado pelo nome."""
+    import ed_parser
+
+    guardado = ed_parser.instalacao_de_payload(
+        "Obra Sem MarketID", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 8}],
+    )
+    servidor.banco.salvar(guardado, message_id=1, reportado_por="Arthur")
+
+    chegando = ed_parser.instalacao_de_payload(
+        "Obra Sem MarketID", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 3}],
+    )
+
+    assert servidor.deve_publicar(chegando) is False
