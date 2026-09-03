@@ -79,6 +79,15 @@ class Armazenamento:
             }
             for m in instalacao.materiais
         ]
+
+        # Deletar linhas com o mesmo market_id mas nome diferente para garantir
+        # que existe apenas uma linha por market_id (a arbitragem é chaveada por market_id).
+        if instalacao.market_id is not None:
+            self._conexao.execute(
+                "DELETE FROM instalacoes WHERE market_id = ? AND nome != ?",
+                (instalacao.market_id, instalacao.nome),
+            )
+
         self._conexao.execute(
             "INSERT INTO instalacoes "
             "(nome, message_id, materiais, ultima_atualizacao, finalizado, market_id, reportado_por) "

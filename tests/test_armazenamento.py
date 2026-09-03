@@ -120,11 +120,22 @@ def test_ainda_recupera_por_nome(banco):
     assert banco.obter("Obra A").message_id == 9
 
 
-def test_salvar_de_novo_com_o_mesmo_market_id_substitui(banco):
-    banco.salvar(instalacao_com_market(fornecido=4), message_id=1)
-    banco.salvar(instalacao_com_market(fornecido=9), message_id=2)
+def test_salvar_de_novo_com_o_mesmo_market_id_mas_nome_diferente_substitui(banco):
+    """Mesmo market_id, nomes diferentes (e.g. "Desconhecida" → "Planetary Construction Site: X")."""
+    banco.salvar(instalacao_com_market(nome="Desconhecida", fornecido=4), message_id=1)
+    banco.salvar(instalacao_com_market(nome="Obra Resolvida", fornecido=9), message_id=2)
+
+    assert banco.obter(4251780355).message_id == 2, "obter(market_id) deve devolver a mais recente"
+    assert len(banco.listar()) == 1, "não pode haver duas linhas com o mesmo market_id"
+
+
+def test_salvar_de_novo_com_o_mesmo_market_id_e_nome_substitui(banco):
+    """Mesmo market_id, mesmo nome — atualiza na mesma linha."""
+    banco.salvar(instalacao_com_market(nome="Obra A", fornecido=4), message_id=1)
+    banco.salvar(instalacao_com_market(nome="Obra A", fornecido=9), message_id=2)
 
     assert banco.obter(4251780355).message_id == 2
+    assert banco.obter("Obra A").message_id == 2
     assert len(banco.listar()) == 1
 
 
