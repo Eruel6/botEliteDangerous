@@ -147,10 +147,10 @@ def sinais_de_construcao(caminho_log):
     }
 
 
-def instalacao_de_payload(nome, materiais):
+def instalacao_de_payload(nome, materiais, market_id=None):
     """Monta uma ``Instalacao`` a partir do JSON recebido pela API."""
     return Instalacao(
-        market_id=None,
+        market_id=market_id,
         nome=nome,
         materiais=[_material(m) for m in materiais],
     )
@@ -174,8 +174,8 @@ def encontrar_log_mais_recente(pasta=None):
     return max(arquivos, key=os.path.getmtime)
 
 
-def formatar_mensagem_discord(instalacao, porcentagem=None):
-    """Bloco de código para o Discord. ``porcentagem`` é opcional e vai no cabeçalho."""
+def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None):
+    """Bloco de código para o Discord. ``porcentagem`` e ``rodape`` são opcionais."""
     sufixo = f" `{porcentagem}`" if porcentagem is not None else ""
     linhas = [f"📍 **Materiais para instalação:** `{instalacao.nome}`{sufixo}\n"]
     linhas.append("```")
@@ -184,6 +184,9 @@ def formatar_mensagem_discord(instalacao, porcentagem=None):
     for m in instalacao.materiais:
         linhas.append(f"{m.nome:<25} | {m.requerido:>5} | {m.fornecido:>7} | {m.faltando:>6}")
     linhas.append("```")
+    if rodape:
+        # -# é a marcação de subtexto do Discord: menor e apagado.
+        linhas.append(f"-# {rodape}")
     return "\n".join(linhas)
 
 

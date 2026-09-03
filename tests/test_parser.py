@@ -185,3 +185,43 @@ def test_sinais_de_construcao_inclui_sites_orbitais():
     assert ed.sinais_de_construcao(os.path.join(FIXTURES, "journal_nome_cru.log")) == {
         "Planetary Construction Site: Sweet Beacon"
     }
+
+
+def test_instalacao_de_payload_aceita_market_id():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}],
+        market_id=4251780355,
+    )
+
+    assert inst.market_id == 4251780355
+
+
+def test_instalacao_de_payload_sem_market_id_continua_none():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+
+    assert inst.market_id is None
+
+
+def test_rodape_vira_subtexto_na_ultima_linha():
+    a, _ = ed.extrair_instalacoes(BASICO)
+
+    msg = ed.formatar_mensagem_discord(a, porcentagem="40.0%", rodape="atualizado por Fulano às 14:32")
+
+    assert msg.splitlines()[-1] == "-# atualizado por Fulano às 14:32"
+
+
+def test_sem_rodape_a_mensagem_nao_ganha_linha_extra():
+    a, _ = ed.extrair_instalacoes(BASICO)
+
+    assert ed.formatar_mensagem_discord(a).splitlines()[-1] == "```"
+
+
+def test_rodape_nao_atrapalha_a_releitura_da_mensagem():
+    """A reconciliação relê as próprias mensagens; o rodapé não pode virar material."""
+    a, _ = ed.extrair_instalacoes(BASICO)
+    msg = ed.formatar_mensagem_discord(a, porcentagem="40.0%", rodape="atualizado por Fulano às 14:32")
+
+    assert ed.nome_na_mensagem(msg) == a.nome
+    assert len(ed.materiais_na_mensagem(msg)) == len(a.materiais)
