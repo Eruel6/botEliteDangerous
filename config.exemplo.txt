@@ -1,0 +1,5 @@
+# Copie este arquivo para config.txt e preencha o API_TOKEN.
+# O token é individual: peça o seu para quem administra o bot.
+
+API_TOKEN=<cole-aqui-o-token-que-voce-recebeu>
+API_URL=https://botelitedangerous.onrender.com/logdata
