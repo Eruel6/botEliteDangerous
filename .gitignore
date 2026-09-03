@@ -7,3 +7,5 @@ __pycache__/
 # Journals do jogo: dados locais, pesados e pessoais. As fixtures de teste
 # ficam em tests/fixtures/ e essas sim são versionadas.
 journals/
+estado.db
+*.db

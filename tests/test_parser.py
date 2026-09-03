@@ -106,3 +106,45 @@ def test_sinais_de_construcao_lista_os_sites_anunciados_no_log():
 
 def test_sinais_de_construcao_ignora_sinais_de_outros_tipos():
     assert ed.sinais_de_construcao(os.path.join(FIXTURES, "journal_sem_depot.log")) == set()
+
+
+def test_le_de_volta_o_nome_da_instalacao_a_partir_da_mensagem_postada():
+    a, _ = ed.extrair_instalacoes(BASICO)
+    conteudo = ed.formatar_mensagem_discord(a, porcentagem="97.5%")
+
+    assert ed.nome_na_mensagem(conteudo) == "Planetary Construction Site: Pedder's Forge"
+
+
+def test_le_de_volta_o_nome_em_mensagem_sem_porcentagem():
+    a, _ = ed.extrair_instalacoes(BASICO)
+
+    assert ed.nome_na_mensagem(ed.formatar_mensagem_discord(a)) == a.nome
+
+
+def test_nome_na_mensagem_devolve_none_para_texto_alheio():
+    assert ed.nome_na_mensagem("oi pessoal, alguem vai pra Colonia hoje?") is None
+
+
+def test_le_de_volta_os_materiais_a_partir_da_mensagem_postada():
+    a, _ = ed.extrair_instalacoes(BASICO)
+    conteudo = ed.formatar_mensagem_discord(a, porcentagem="100.0%")
+
+    lidos = ed.materiais_na_mensagem(conteudo)
+
+    assert [(m.nome, m.requerido, m.fornecido) for m in lidos] == [
+        (m.nome, m.requerido, m.fornecido) for m in a.materiais
+    ]
+
+
+def test_le_de_volta_materiais_com_nome_maior_que_a_coluna():
+    inst = ed.instalacao_de_payload(
+        "X",
+        [{"Name_Localised": "Fabricantes de construções pesadas", "RequiredAmount": 165, "ProvidedAmount": 3}],
+    )
+    (lido,) = ed.materiais_na_mensagem(ed.formatar_mensagem_discord(inst))
+
+    assert (lido.nome, lido.requerido, lido.fornecido) == ("Fabricantes de construções pesadas", 165, 3)
+
+
+def test_materiais_na_mensagem_devolve_vazio_para_texto_alheio():
+    assert ed.materiais_na_mensagem("papo do canal") == []

@@ -12,6 +12,7 @@ O ``MarketID`` é a chave exata que liga os dois.
 import glob
 import json
 import os
+import re
 from dataclasses import dataclass, field
 
 NOME_DESCONHECIDO = "Desconhecida"
@@ -151,6 +152,37 @@ def formatar_mensagem_discord(instalacao, porcentagem=None):
         linhas.append(f"{m.nome:<25} | {m.requerido:>5} | {m.fornecido:>7} | {m.faltando:>6}")
     linhas.append("```")
     return "\n".join(linhas)
+
+
+_NOME_NA_MENSAGEM = re.compile(r"^📍 \*\*Materiais para instalação:\*\* `([^`]+)`")
+
+
+def nome_na_mensagem(conteudo):
+    """Nome da instalação a partir de uma mensagem já postada (None se não for uma)."""
+    achado = _NOME_NA_MENSAGEM.match(conteudo or "")
+    return achado.group(1) if achado else None
+
+
+_LINHA_DE_MATERIAL = re.compile(r"^(.+?)\s+\|\s+(\d+)\s+\|\s+(\d+)\s+\|\s+-?\d+$")
+
+
+def materiais_na_mensagem(conteudo):
+    """Materiais relidos de uma mensagem já postada, para reconstruir o estado."""
+    materiais = []
+    for linha in (conteudo or "").splitlines():
+        achado = _LINHA_DE_MATERIAL.match(linha)
+        if not achado or achado.group(1) == "Material":
+            continue
+        nome, requerido, fornecido = achado.groups()
+        materiais.append(
+            Material(
+                nome=nome.strip(),
+                nome_interno="",
+                requerido=int(requerido),
+                fornecido=int(fornecido),
+            )
+        )
+    return materiais
 
 
 def formatar_tabela_terminal(instalacao):
