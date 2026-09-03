@@ -357,19 +357,24 @@ def test_nome_vazio_nao_eh_carregado(monkeypatch, tmp_path):
     assert servidor.carregar_tokens() == {}
 
 
-def test_requisicao_sem_cabecalho_e_nao_autentica_com_linha_malformada(monkeypatch, tmp_path):
+def test_token_vazio_nao_autentica_mesmo_com_nome(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
     monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
     monkeypatch.setenv("API_TOKENS", "Arthur=\n")
-    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "estado.db"))
+    monkeypatch.delenv("API_TOKEN", raising=False)
     sys.modules.pop("servidor", None)
     sys.modules.pop("armazenamento", None)
     import servidor
 
-    from fastapi.testclient import TestClient
+    # Testa diretamente conferir_token, sem passar pelo endpoint
+    # (evita interferência do client.is_ready()).
+    # Com a linha "Arthur=" (token vazio) rejeitada, não há tokens válidos.
+    # Tentativa de autenticar com None (header ausente) deve levantar 503.
+    with pytest.raises(HTTPException) as erro:
+        servidor.conferir_token(None)
 
-    resposta = TestClient(servidor.app, raise_server_exceptions=False).post(
-        "/logdata", json=PAYLOAD
-    )
-    # Com linha malformada descartada, não há tokens válidos → 503 (não 401)
-    assert resposta.status_code == 503
+    assert erro.value.status_code == 503
+    assert "API_TOKENS" in erro.value.detail
