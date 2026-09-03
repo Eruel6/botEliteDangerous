@@ -16,7 +16,9 @@ import re
 from dataclasses import dataclass, field
 
 NOME_DESCONHECIDO = "Desconhecida"
-PREFIXO_CONSTRUCAO = "Planetary Construction Site:"
+# Casa com solo ("Planetary Construction Site:") e com órbita
+# ("Orbital Construction Site:", "Space Construction Site:").
+MARCA_CONSTRUCAO = "Construction Site:"
 PASTA_JOURNAL_PADRAO = os.path.join("~", "Saved Games", "Frontier Developments", "Elite Dangerous")
 
 
@@ -55,6 +57,29 @@ class Instalacao:
         return sum(m.fornecido for m in self.materiais) / total * 100
 
 
+def e_nome_de_construcao(nome):
+    return MARCA_CONSTRUCAO in (nome or "")
+
+
+def _melhor_nome(candidatos, sinais):
+    """Melhor nome disponível para uma instalação, do mais explícito ao mais cru.
+
+    O jogo nem sempre reporta o nome completo: um ApproachSettlement pode vir
+    como "Sweet Beacon" enquanto o FSS anuncia "Planetary Construction Site:
+    Sweet Beacon". E sites orbitais não geram ApproachSettlement nenhum, só
+    Docked. Exigir o prefixo em ApproachSettlement fazia essas instalações
+    virarem Desconhecida e sumirem das mensagens.
+    """
+    for nome in candidatos:
+        if e_nome_de_construcao(nome):
+            return nome
+    for nome in candidatos:
+        for sinal in sinais:
+            if sinal.endswith(f": {nome}"):
+                return sinal
+    return candidatos[0] if candidatos else NOME_DESCONHECIDO
+
+
 def _material(bruto):
     return Material(
         nome=bruto.get("Name_Localised", bruto.get("Name", "?")),
@@ -76,17 +101,25 @@ def _registros(caminho_log):
 def extrair_instalacoes(caminho_log):
     """Devolve uma ``Instalacao`` por MarketID, com o estado mais recente do log."""
     por_market = {}
-    nomes = {}
+    candidatos = {}
+    sinais = set()
 
     for ordem, registro in enumerate(_registros(caminho_log)):
         if not isinstance(registro, dict):
             continue
         evento = registro.get("event")
 
-        if evento == "ApproachSettlement":
-            nome = registro.get("Name", "")
-            if nome.startswith(PREFIXO_CONSTRUCAO):
-                nomes[registro.get("MarketID")] = nome
+        if evento in ("ApproachSettlement", "Docked"):
+            nome = registro.get("Name") or registro.get("StationName")
+            if nome:
+                vistos = candidatos.setdefault(registro.get("MarketID"), [])
+                if nome not in vistos:
+                    vistos.append(nome)
+
+        elif evento == "FSSSignalDiscovered":
+            sinal = registro.get("SignalName", "")
+            if MARCA_CONSTRUCAO in sinal:
+                sinais.add(sinal)
 
         elif evento == "ColonisationConstructionDepot":
             market_id = registro.get("MarketID")
@@ -98,7 +131,7 @@ def extrair_instalacoes(caminho_log):
             instalacao._ordem = ordem
 
     for market_id, instalacao in por_market.items():
-        instalacao.nome = nomes.get(market_id, NOME_DESCONHECIDO)
+        instalacao.nome = _melhor_nome(candidatos.get(market_id, []), sinais)
 
     return list(por_market.values())
 
@@ -110,7 +143,7 @@ def sinais_de_construcao(caminho_log):
         for r in _registros(caminho_log)
         if isinstance(r, dict)
         and r.get("event") == "FSSSignalDiscovered"
-        and r.get("SignalName", "").startswith(PREFIXO_CONSTRUCAO)
+        and MARCA_CONSTRUCAO in r.get("SignalName", "")
     }
 
 

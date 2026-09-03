@@ -1,0 +1,3 @@
+{"timestamp": "2025-05-20T17:20:45Z", "event": "FSSSignalDiscovered", "SignalName": "Planetary Construction Site: Sweet Beacon", "SignalType": "Installation"}
+{"timestamp": "2025-05-20T17:20:38Z", "event": "ApproachSettlement", "Name": "Sweet Beacon", "MarketID": 4250689283, "StationServices": []}
+{"timestamp": "2025-05-20T17:00:00Z", "event": "ColonisationConstructionDepot", "MarketID": 4250689283, "ConstructionProgress": 0.3, "ConstructionComplete": false, "ConstructionFailed": false, "ResourcesRequired": [{"Name": "$steel_name;", "Name_Localised": "Aço", "RequiredAmount": 100, "ProvidedAmount": 30}]}

@@ -66,7 +66,7 @@ async def enviar_atualizacoes():
 
             # Instalações que sumiram da lista de construction sites: marcar finalizadas.
             for nome in list(mensagens_enviadas):
-                if nome.startswith(ed_parser.PREFIXO_CONSTRUCAO) and nome not in sites_ativos:
+                if ed_parser.e_nome_de_construcao(nome) and nome not in sites_ativos:
                     mensagem, instalacao = mensagens_enviadas[nome]
                     total = len(instalacao.materiais)
                     if total == 0:

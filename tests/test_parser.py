@@ -155,3 +155,33 @@ def test_le_de_volta_materiais_com_nome_maior_que_a_coluna():
 
 def test_materiais_na_mensagem_devolve_vazio_para_texto_alheio():
     assert ed.materiais_na_mensagem("papo do canal") == []
+
+
+# --- resolução de nome: instalações que sumiam das mensagens -------------------
+
+
+def test_resolve_nome_quando_approach_settlement_traz_o_nome_cru():
+    """O jogo às vezes reporta 'Sweet Beacon' em vez de 'Planetary Construction
+    Site: Sweet Beacon'. Antes isso virava Desconhecida e a instalação sumia."""
+    (inst,) = ed.extrair_instalacoes(os.path.join(FIXTURES, "journal_nome_cru.log"))
+
+    assert inst.nome == "Planetary Construction Site: Sweet Beacon"
+
+
+def test_resolve_nome_de_instalacao_conhecida_apenas_por_docked():
+    """Sites orbitais não geram ApproachSettlement — só Docked."""
+    (inst,) = ed.extrair_instalacoes(os.path.join(FIXTURES, "journal_so_docked.log"))
+
+    assert inst.nome == "Orbital Construction Site: Vulcan Gate"
+
+
+def test_continua_desconhecida_quando_nao_ha_nenhuma_fonte_de_nome():
+    (inst,) = ed.extrair_instalacoes(os.path.join(FIXTURES, "journal_sem_fonte_de_nome.log"))
+
+    assert inst.nome == ed.NOME_DESCONHECIDO
+
+
+def test_sinais_de_construcao_inclui_sites_orbitais():
+    assert ed.sinais_de_construcao(os.path.join(FIXTURES, "journal_nome_cru.log")) == {
+        "Planetary Construction Site: Sweet Beacon"
+    }
