@@ -7,6 +7,7 @@ plano gratuito do Render hiberna o serviço e o processo perde a memória.
 import asyncio
 import datetime
 import os
+import secrets
 from contextlib import asynccontextmanager
 
 import discord
@@ -20,6 +21,7 @@ import ed_parser
 load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 DISCORD_CHANNEL_ID = int(os.getenv("DISCORD_CHANNEL_ID"))
+API_TOKENS_BRUTO = os.getenv("API_TOKENS", "")
 API_TOKEN = os.getenv("API_TOKEN")
 
 TEMPO_FINALIZACAO_HORAS = 2
@@ -30,6 +32,42 @@ CHECK = "✅"
 intents = discord.Intents.default()
 client = discord.Client(intents=intents)
 banco = armazenamento.Armazenamento()
+
+
+def carregar_tokens():
+    """Mapa token -> nome de quem reporta.
+
+    API_TOKENS traz uma linha "nome=token" por pessoa. API_TOKEN sozinho
+    continua valendo como uma entrada sem nome, para o deploy atual não
+    quebrar durante a transição.
+    """
+    tokens = {}
+    for linha in API_TOKENS_BRUTO.splitlines():
+        linha = linha.strip()
+        if not linha or "=" not in linha:
+            continue
+        nome, token = linha.split("=", 1)
+        if token.strip():
+            tokens[token.strip()] = nome.strip()
+    if API_TOKEN:
+        tokens.setdefault(API_TOKEN, "desconhecido")
+    return tokens
+
+
+def conferir_token(token):
+    """Nome de quem enviou. 401 se o token não bate, 503 se não há nenhum."""
+    tokens = carregar_tokens()
+    if not tokens:
+        raise HTTPException(
+            status_code=503,
+            detail="Servidor sem API_TOKENS configurado; endpoint desabilitado.",
+        )
+    for conhecido, nome in tokens.items():
+        # compare_digest para o tempo de resposta não revelar quanto do token
+        # está correto.
+        if secrets.compare_digest(token or "", conhecido):
+            return nome
+    raise HTTPException(status_code=401, detail="Token inválido.")
 
 
 @asynccontextmanager
@@ -59,17 +97,6 @@ async def on_ready():
             await reconciliar_com_o_canal(canal, autor=client.user)
         except Exception as e:
             print(f"Erro ao reconstruir estado do canal: {e}")
-
-
-def conferir_token(token):
-    """401 se o token não bate; 503 se o servidor foi subido sem API_TOKEN."""
-    if not API_TOKEN:
-        raise HTTPException(
-            status_code=503,
-            detail="Servidor sem API_TOKEN configurado; endpoint desabilitado.",
-        )
-    if token != API_TOKEN:
-        raise HTTPException(status_code=401, detail="Token inválido.")
 
 
 async def adicionar_reacao_check(mensagem, materiais):

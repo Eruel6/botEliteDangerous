@@ -143,6 +143,7 @@ def test_endpoint_desabilitado_quando_API_TOKEN_nao_esta_configurado(monkeypatch
     monkeypatch.setenv("DISCORD_BOT_TOKEN", "token-de-teste")
     monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
     monkeypatch.delenv("API_TOKEN", raising=False)
+    monkeypatch.delenv("API_TOKENS", raising=False)
     monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "estado.db"))
     sys.modules.pop("servidor", None)
     import servidor
@@ -257,3 +258,74 @@ def test_reconciliacao_nao_sobrescreve_registro_ja_conhecido(servidor):
     asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=bot))
 
     assert servidor.banco.obter(inst.nome).message_id == 111
+
+
+def test_carrega_um_token_por_pessoa(monkeypatch, tmp_path):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
+    monkeypatch.setenv("API_TOKENS", "Arthur=aaa\nFulano=bbb\n")
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    assert servidor.carregar_tokens() == {"aaa": "Arthur", "bbb": "Fulano"}
+
+
+def test_api_token_sozinho_continua_valendo(monkeypatch, tmp_path):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
+    monkeypatch.delenv("API_TOKENS", raising=False)
+    monkeypatch.setenv("API_TOKEN", "sozinho")
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    assert servidor.carregar_tokens() == {"sozinho": "desconhecido"}
+
+
+@pytest.fixture
+def servidor_multi(monkeypatch, tmp_path):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
+    monkeypatch.setenv("API_TOKENS", "Arthur=aaa\nFulano=bbb\n")
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    return servidor
+
+
+def test_token_conhecido_devolve_o_nome(servidor_multi):
+    assert servidor_multi.conferir_token("bbb") == "Fulano"
+
+
+def test_token_desconhecido_e_401(servidor_multi):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as erro:
+        servidor_multi.conferir_token("chute")
+
+    assert erro.value.status_code == 401
+
+
+def test_sem_nenhum_token_configurado_e_503(monkeypatch, tmp_path):
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
+    monkeypatch.delenv("API_TOKENS", raising=False)
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    with pytest.raises(HTTPException) as erro:
+        servidor.conferir_token("qualquer")
+
+    assert erro.value.status_code == 503
