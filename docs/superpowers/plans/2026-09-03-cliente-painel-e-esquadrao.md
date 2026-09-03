@@ -17,7 +17,7 @@
 - O painel liga **apenas** em `127.0.0.1`, nunca `0.0.0.0`, e serve apenas rotas explícitas — nunca um diretório.
 - Nenhum segredo em arquivo versionado. `config.txt` e `.env` são ignorados pelo git; exemplos usam placeholders óbvios como `<token-gerado-para-o-fulano>`, jamais um prefixo de token real.
 - O cliente roda em **Windows** (jogo e cliente na mesma máquina). O launcher é `.bat`.
-- Mensagens de commit em português, no imperativo, explicando o porquê.
+- Mensagens de commit em português, no indicativo em 3ª pessoa (o padrão do histórico deste repo: "Lê", "Compara", "Isola"), explicando o porquê.
 - Todo texto visível ao usuário em português.
 
 ## File Structure
