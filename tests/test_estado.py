@@ -46,7 +46,7 @@ def test_registra_a_leitura_com_as_instalacoes():
 def test_registra_envio_bem_sucedido():
     e = estado.EstadoCliente()
 
-    e.registrar_envio("Obra A", 200)
+    e.registrar_envio(200)
     d = e.como_dicionario()
 
     assert d["ultimo_status_http"] == 200
@@ -56,7 +56,7 @@ def test_registra_envio_bem_sucedido():
 def test_envio_com_erro_nao_conta_como_envio_ok():
     e = estado.EstadoCliente()
 
-    e.registrar_envio("Obra A", 401)
+    e.registrar_envio(401)
     d = e.como_dicionario()
 
     assert d["ultimo_status_http"] == 401
@@ -84,7 +84,7 @@ def test_descarta_erros_antigos_alem_do_limite():
 def test_o_dicionario_e_serializavel_em_json():
     e = estado.EstadoCliente()
     e.registrar_leitura("C:/Journal.01.log", [instalacao()])
-    e.registrar_envio("Obra A", 200)
+    e.registrar_envio(200)
     e.registrar_erro("algo quebrou")
 
     json.dumps(e.como_dicionario())

@@ -17,7 +17,7 @@ import painel
 @pytest.fixture
 def servidor_no_ar():
     e = estado.EstadoCliente()
-    e.registrar_envio("Obra A", 200)
+    e.registrar_envio(200)
     servidor, porta = painel.iniciar_painel(e, porta=0)
     yield f"http://127.0.0.1:{porta}", e
     servidor.shutdown()

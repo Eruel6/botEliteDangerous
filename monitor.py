@@ -59,7 +59,7 @@ def sincronizar(log_path, memoria, config, estado_cliente, enviar=enviar_para_ap
             continue
 
         status = enviar(payload, config)
-        estado_cliente.registrar_envio(instalacao.nome, status or 0)
+        estado_cliente.registrar_envio(status or 0)
 
         if status is not None and 200 <= status < 300:
             memoria[instalacao.nome] = assinatura

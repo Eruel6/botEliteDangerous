@@ -44,7 +44,7 @@ class EstadoCliente:
                 for i in instalacoes
             ]
 
-    def registrar_envio(self, nome, status_http):
+    def registrar_envio(self, status_http):
         with self._lock:
             self._ultimo_status_http = status_http
             if 200 <= status_http < 300:
