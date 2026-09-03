@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Rodar os testes com `.venv/bin/python -m pytest tests/ -q`. Os 68 testes existentes devem continuar verdes em toda tarefa.
+- Rodar os testes com `.venv/bin/python -m pytest tests/ -q`. A suíte inteira fica verde ao fim de cada tarefa. A contagem pode mudar: a Task 3 substitui `tests/test_cliente.py` por `tests/test_monitor.py` de propósito.
 - Nenhuma dependência nova. O painel usa `http.server` e `threading` da stdlib.
 - O painel liga **apenas** em `127.0.0.1`, nunca `0.0.0.0`, e serve apenas rotas explícitas — nunca um diretório.
 - Nenhum segredo em arquivo versionado. `config.txt` e `.env` são ignorados pelo git; exemplos usam placeholders óbvios como `<token-gerado-para-o-fulano>`, jamais um prefixo de token real.
@@ -404,9 +404,12 @@ escrita rara."
 
 **Files:**
 - Create: `monitor.py`
-- Modify: `cliente.py` (remove `payload_de`, `enviar_para_api`, `sincronizar` e `main`, que passam para `monitor.py`)
 - Test: `tests/test_monitor.py`
-- Modify: `tests/test_cliente.py` (passa a importar de `monitor`)
+- Delete: `tests/test_cliente.py`
+
+`cliente.py` NÃO é tocado nesta tarefa — ele continua com o código antigo até a
+Task 5, que o reescreve. Nada mais importa as funções antigas dele depois que
+`tests/test_cliente.py` sai.
 
 **Interfaces:**
 - Consumes: `config_cliente.Config` (Task 1), `estado.EstadoCliente` (Task 2), `ed_parser.extrair_instalacoes`, `ed_parser.encontrar_log_mais_recente`, `ed_parser.NOME_DESCONHECIDO`.
@@ -1056,7 +1059,7 @@ printf 'config.txt\n' >> .gitignore
 
 - [ ] **Step 5: Verificar que a config ausente para o cliente com mensagem clara**
 
-Run: `cd /tmp && .venv/bin/python -c "import sys; sys.path.insert(0,'<caminho-do-repo>'); import cliente; print('saida:', cliente.main())"`
+Run: `cd /tmp && /home/arthur/Documentos/Estudos/botEliteDangerous/.venv/bin/python -c "import sys; sys.path.insert(0,'/home/arthur/Documentos/Estudos/botEliteDangerous'); import cliente; print('saida:', cliente.main())"`
 Expected: imprime `[CONFIGURAÇÃO] Não encontrei config.txt. Copie config.exemplo.txt...` e `saida: 1`
 
 - [ ] **Step 6: Rodar a suíte inteira**
