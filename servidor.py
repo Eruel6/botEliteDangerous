@@ -47,7 +47,7 @@ def carregar_tokens():
         if not linha or "=" not in linha:
             continue
         nome, token = linha.split("=", 1)
-        if token.strip():
+        if nome.strip() and token.strip():
             tokens[token.strip()] = nome.strip()
     if API_TOKEN:
         tokens.setdefault(API_TOKEN, "desconhecido")

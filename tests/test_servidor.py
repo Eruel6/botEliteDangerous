@@ -329,3 +329,47 @@ def test_sem_nenhum_token_configurado_e_503(monkeypatch, tmp_path):
         servidor.conferir_token("qualquer")
 
     assert erro.value.status_code == 503
+
+
+def test_token_vazio_nao_eh_carregado(monkeypatch, tmp_path):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
+    monkeypatch.setenv("API_TOKENS", "Arthur=\n")
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    assert servidor.carregar_tokens() == {}
+
+
+def test_nome_vazio_nao_eh_carregado(monkeypatch, tmp_path):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "e.db"))
+    monkeypatch.setenv("API_TOKENS", "=abcdef\n")
+    monkeypatch.delenv("API_TOKEN", raising=False)
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    assert servidor.carregar_tokens() == {}
+
+
+def test_requisicao_sem_cabecalho_e_nao_autentica_com_linha_malformada(monkeypatch, tmp_path):
+    monkeypatch.setenv("DISCORD_BOT_TOKEN", "t")
+    monkeypatch.setenv("DISCORD_CHANNEL_ID", "123456789012345678")
+    monkeypatch.setenv("API_TOKENS", "Arthur=\n")
+    monkeypatch.setenv("CAMINHO_DB", str(tmp_path / "estado.db"))
+    sys.modules.pop("servidor", None)
+    sys.modules.pop("armazenamento", None)
+    import servidor
+
+    from fastapi.testclient import TestClient
+
+    resposta = TestClient(servidor.app, raise_server_exceptions=False).post(
+        "/logdata", json=PAYLOAD
+    )
+    # Com linha malformada descartada, não há tokens válidos → 503 (não 401)
+    assert resposta.status_code == 503
