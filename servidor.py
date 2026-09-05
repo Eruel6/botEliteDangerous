@@ -340,7 +340,14 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     porcentagem = f"{instalacao.porcentagem:.1f}%"
     agora = datetime.datetime.now(datetime.timezone.utc)
     rodape = f"atualizado por {quem} às {agora.strftime('%H:%M')} UTC"
-    msg_formatada = ed_parser.formatar_mensagem_discord(instalacao, porcentagem, rodape)
+    creditos = (
+        banco.entregas_por_pessoa(instalacao.market_id)
+        if instalacao.market_id is not None
+        else {}
+    )
+    msg_formatada = ed_parser.formatar_mensagem_discord(
+        instalacao, porcentagem, rodape, creditos=creditos
+    )
 
     canal = client.get_channel(DISCORD_CHANNEL_ID)
 

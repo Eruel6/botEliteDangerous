@@ -860,3 +860,33 @@ def test_a_caminho_ignora_carga_mais_velha_que_a_validade(servidor):
     obras = [r.instalacao for r in servidor.banco.listar(pendentes=True)]
 
     assert servidor.a_caminho_por_material(servidor.banco, obras, agora) == {"Steel": 200}
+
+
+def test_o_credito_nao_e_reconciliado_do_canal(servidor):
+    """Reler o rodapé duplicaria: o cliente reenvia a sessão inteira todo ciclo,
+    então o total do canal e as entregas reenviadas se somariam."""
+    import ed_parser
+
+    bot = UsuarioFalso(42)
+    inst = ed_parser.instalacao_de_payload(
+        "Planetary Construction Site: X",
+        [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}],
+    )
+    texto = ed_parser.formatar_mensagem_discord(inst, "40.0%", creditos={"Eruel": 1440})
+    canal = CanalFalso([MensagemComConteudo(333, texto, bot)], bot=bot)
+
+    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=bot))
+
+    assert servidor.banco.entregas_por_pessoa(333) == {}
+
+
+def test_a_mensagem_da_obra_leva_o_credito_acumulado(servidor):
+    servidor.banco.registrar_entregas("Eruel", [
+        {"quando": "2025-05-20T17:00:00Z", "market_id": 901, "material": "Aço", "quantidade": 1440},
+    ])
+    inst = _obra_de_teste_com_sistema("Obra", 100, 10, market_id=901, sistema="Sol")
+
+    creditos = servidor.banco.entregas_por_pessoa(inst.market_id)
+    texto = __import__("ed_parser").formatar_mensagem_discord(inst, "10.0%", creditos=creditos)
+
+    assert "-# entregue: Eruel 1440t" in texto

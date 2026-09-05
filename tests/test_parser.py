@@ -265,3 +265,53 @@ def test_instalacao_de_payload_sem_sistema_fica_vazia():
     inst = ed.instalacao_de_payload("X", [], market_id=1)
 
     assert inst.sistema == ""
+
+
+def test_credito_ordena_do_maior_para_o_menor():
+    assert ed.formatar_creditos({"btpopov": 720, "Eruel": 1440}) == (
+        "entregue: Eruel 1440t · btpopov 720t"
+    )
+
+
+def test_sem_entrega_nao_ha_linha_de_credito():
+    assert ed.formatar_creditos({}) == ""
+
+
+def test_credito_corta_no_limite_e_resume():
+    muitos = {f"Piloto{i:02d}": 100 - i for i in range(40)}
+
+    linha = ed.formatar_creditos(muitos, limite=120)
+
+    assert len(linha) <= 140
+    assert "+" in linha.rsplit("·", 1)[-1]
+
+
+def test_a_mensagem_de_obra_carrega_o_credito():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+
+    texto = ed.formatar_mensagem_discord(
+        inst, "40.0%", rodape="atualizado por Eruel", creditos={"Eruel": 1440}
+    )
+
+    assert "-# entregue: Eruel 1440t" in texto
+
+
+def test_o_credito_e_relido_da_mensagem():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+    texto = ed.formatar_mensagem_discord(
+        inst, "40.0%", creditos={"Eruel": 1440, "btpopov": 720}
+    )
+
+    assert ed.creditos_na_mensagem(texto) == {"Eruel": 1440, "btpopov": 720}
+
+
+def test_mensagem_sem_credito_relida_devolve_vazio():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+
+    assert ed.creditos_na_mensagem(ed.formatar_mensagem_discord(inst)) == {}

@@ -189,7 +189,55 @@ def encontrar_log_mais_recente(pasta=None):
     return max(arquivos, key=os.path.getmtime)
 
 
-def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None):
+LIMITE_LINHA_CREDITO = 300
+
+
+def formatar_creditos(por_pessoa, limite=LIMITE_LINHA_CREDITO):
+    """"entregue: Eruel 1440t · btpopov 720t", cortada no limite."""
+    if not por_pessoa:
+        return ""
+
+    ordenado = sorted(por_pessoa.items(), key=lambda item: (-item[1], item[0]))
+    partes = []
+    tamanho = len("entregue: ")
+    for quem, total in ordenado:
+        pedaco = f"{quem} {total}t"
+        adicional = len(pedaco) + (3 if partes else 0)
+        if tamanho + adicional > limite:
+            break
+        partes.append(pedaco)
+        tamanho += adicional
+
+    restantes = len(ordenado) - len(partes)
+    if restantes:
+        partes.append(f"+{restantes}")
+    return "entregue: " + " · ".join(partes)
+
+
+_LINHA_DE_CREDITO = re.compile(r"^-# entregue: (.+)$", re.MULTILINE)
+_UM_CREDITO = re.compile(r"^(.+) (\d+)t$")
+
+
+def creditos_na_mensagem(conteudo):
+    """Créditos relidos de uma mensagem já postada. O '+N' final é descartado.
+
+    Não é usada pela reconciliação: reler o total do canal duplicaria, porque o
+    cliente reenvia todas as entregas da sessão a cada ciclo. Existe para o
+    formato ser testável de ida e volta, e para uma reconciliação futura com
+    armazenamento persistente.
+    """
+    achado = _LINHA_DE_CREDITO.search(conteudo or "")
+    if not achado:
+        return {}
+    creditos = {}
+    for pedaco in achado.group(1).split(" · "):
+        item = _UM_CREDITO.match(pedaco.strip())
+        if item:
+            creditos[item.group(1)] = int(item.group(2))
+    return creditos
+
+
+def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None, creditos=None):
     """Bloco de código para o Discord. ``porcentagem`` e ``rodape`` são opcionais."""
     sufixo = f" `{porcentagem}`" if porcentagem is not None else ""
     linhas = [f"📍 **Materiais para instalação:** `{instalacao.nome}`{sufixo}\n"]
@@ -202,6 +250,9 @@ def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None):
     if rodape:
         # -# é a marcação de subtexto do Discord: menor e apagado.
         linhas.append(f"-# {rodape}")
+    linha_credito = formatar_creditos(creditos or {})
+    if linha_credito:
+        linhas.append(f"-# {linha_credito}")
     return "\n".join(linhas)
 
 
