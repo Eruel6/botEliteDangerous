@@ -158,6 +158,15 @@ def test_nave_vazia_nao_filtra_pad():
     assert ardent.pad_necessario("") == 1
 
 
+def test_nave_de_pad_medio_nao_filtra():
+    """Keelback (independant_trader) é de pad médio, não está na tabela.
+
+    Estar ausente da PAD_POR_NAVE é deliberado: cai no padrão 1, logo não
+    filtra nada. Uma nave de pad médio deve ter acesso a estações de pad médio.
+    """
+    assert ardent.pad_necessario("independant_trader") == 1
+
+
 def test_estacao_com_pad_pequeno_e_descartada():
     estacoes = [_estacao("Grande", pad=3), _estacao("Media", pad=2)]
 

@@ -89,12 +89,17 @@ MAXIMO_POR_MATERIAL = 3
 
 #: Pad exigido por nave: 1 pequeno, 2 médio, 3 grande.
 #:
-#: Só nave de pad grande ganha alguma coisa com este filtro — nave pequena e
-#: média pousa em qualquer lugar. Por isso a tabela lista só as grandes, e
-#: qualquer nave ausente cai no padrão 1, que não filtra nada. Filtrar errado
-#: esconderia estação boa; não filtrar só deixa passar estação ruim.
+#: A tabela lista **apenas** naves que exigem pad GRANDE. Nave pequena ou
+#: média pousa em qualquer lugar, por isso nenhuma delas está aqui. Uma nave
+#: ausente cai no padrão 1, que não filtra nada.
 #:
-#: type9 está confirmado pelo Loadout real do Arthur. O resto é dado a conferir.
+#: Filtrar errado — listar uma nave de pad médio como se fosse grande —
+#: esconderia estação boa. Não filtrar — deixar uma nave desconhecida de fora
+#: — só deixa passar estação ruim. Por isso, adicione uma nave só se tiver
+#: verificado que ela exige pad grande.
+#:
+#: type9 está confirmado pelo Loadout real do Arthur. Os demais foram
+#: verificados na wiki do Elite Dangerous e em INARA.
 PAD_POR_NAVE = {
     "type9": 3,
     "type9_military": 3,
@@ -103,8 +108,6 @@ PAD_POR_NAVE = {
     "cutter": 3,
     "federation_corvette": 3,
     "belugaliner": 3,
-    "independant_trader": 3,
-    "typex_3": 3,
 }
 
 
