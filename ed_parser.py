@@ -46,6 +46,7 @@ class Instalacao:
     progresso: float = 0.0
     completa: bool = False
     falhou: bool = False
+    sistema: str = ""
     _ordem: int = -1
 
     @property
@@ -89,7 +90,12 @@ def _material(bruto):
     )
 
 
-def _registros(caminho_log):
+def registros(caminho_log):
+    """Cada linha do Journal como dicionário; linhas inválidas são puladas.
+
+    Público porque o comandante.py precisa do mesmo fluxo — dois parsers do
+    mesmo arquivo seria uma divergência esperando para acontecer.
+    """
     with open(caminho_log, "r", encoding="utf-8") as f:
         for linha in f:
             try:
@@ -103,11 +109,18 @@ def extrair_instalacoes(caminho_log):
     por_market = {}
     candidatos = {}
     sinais = set()
+    sistema_corrente = ""
 
-    for ordem, registro in enumerate(_registros(caminho_log)):
+    for ordem, registro in enumerate(registros(caminho_log)):
         if not isinstance(registro, dict):
             continue
         evento = registro.get("event")
+
+        # Qualquer evento que carregue StarSystem serve: FSDJump, Location,
+        # Docked, SupercruiseExit. Rastrear o corrente cobre a obra planetária,
+        # que é aproximada sem pouso e cujo ApproachSettlement não traz sistema.
+        if registro.get("StarSystem"):
+            sistema_corrente = registro["StarSystem"]
 
         if evento in ("ApproachSettlement", "Docked"):
             nome = registro.get("Name") or registro.get("StationName")
@@ -129,6 +142,7 @@ def extrair_instalacoes(caminho_log):
             instalacao.completa = registro.get("ConstructionComplete", False)
             instalacao.falhou = registro.get("ConstructionFailed", False)
             instalacao._ordem = ordem
+            instalacao.sistema = sistema_corrente
 
     for market_id, instalacao in por_market.items():
         instalacao.nome = _melhor_nome(candidatos.get(market_id, []), sinais)
@@ -140,19 +154,20 @@ def sinais_de_construcao(caminho_log):
     """Nomes dos Planetary Construction Sites anunciados por FSSSignalDiscovered."""
     return {
         r["SignalName"]
-        for r in _registros(caminho_log)
+        for r in registros(caminho_log)
         if isinstance(r, dict)
         and r.get("event") == "FSSSignalDiscovered"
         and MARCA_CONSTRUCAO in r.get("SignalName", "")
     }
 
 
-def instalacao_de_payload(nome, materiais, market_id=None):
+def instalacao_de_payload(nome, materiais, market_id=None, sistema=""):
     """Monta uma ``Instalacao`` a partir do JSON recebido pela API."""
     return Instalacao(
         market_id=market_id,
         nome=nome,
         materiais=[_material(m) for m in materiais],
+        sistema=sistema,
     )
 
 

@@ -54,14 +54,15 @@ Criar `tests/fixtures/journal_com_sistema.log` com exatamente estas quatro linha
 { "timestamp":"2025-05-20T18:00:00Z", "event":"FSDJump", "StarSystem":"Outro Sistema" }
 ```
 
-Acrescentar ao fim de `tests/test_parser.py`:
+Acrescentar ao fim de `tests/test_parser.py`. **Atenção:** esse arquivo
+importa o módulo como `ed`, não como `ed_parser` (linha 6).
 
 ```python
 COM_SISTEMA = os.path.join(FIXTURES, "journal_com_sistema.log")
 
 
 def test_registros_e_publico_e_devolve_os_eventos():
-    eventos = [r.get("event") for r in ed_parser.registros(COM_SISTEMA)]
+    eventos = [r.get("event") for r in ed.registros(COM_SISTEMA)]
 
     assert eventos == [
         "FSDJump",
@@ -73,26 +74,26 @@ def test_registros_e_publico_e_devolve_os_eventos():
 
 def test_a_obra_recebe_o_sistema_corrente():
     """ApproachSettlement não traz StarSystem; o sistema vem do FSDJump anterior."""
-    (obra,) = ed_parser.extrair_instalacoes(COM_SISTEMA)
+    (obra,) = ed.extrair_instalacoes(COM_SISTEMA)
 
     assert obra.sistema == "Wregoe KP-E c25-11"
 
 
 def test_o_sistema_e_o_do_momento_da_obra_nao_o_ultimo_do_log():
     """O log termina em outro sistema; a obra continua no sistema onde foi vista."""
-    (obra,) = ed_parser.extrair_instalacoes(COM_SISTEMA)
+    (obra,) = ed.extrair_instalacoes(COM_SISTEMA)
 
     assert obra.sistema != "Outro Sistema"
 
 
 def test_instalacao_de_payload_aceita_sistema():
-    inst = ed_parser.instalacao_de_payload("X", [], market_id=1, sistema="Sol")
+    inst = ed.instalacao_de_payload("X", [], market_id=1, sistema="Sol")
 
     assert inst.sistema == "Sol"
 
 
 def test_instalacao_de_payload_sem_sistema_fica_vazia():
-    inst = ed_parser.instalacao_de_payload("X", [], market_id=1)
+    inst = ed.instalacao_de_payload("X", [], market_id=1)
 
     assert inst.sistema == ""
 ```

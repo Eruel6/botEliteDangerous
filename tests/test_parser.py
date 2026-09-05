@@ -225,3 +225,43 @@ def test_rodape_nao_atrapalha_a_releitura_da_mensagem():
 
     assert ed.nome_na_mensagem(msg) == a.nome
     assert len(ed.materiais_na_mensagem(msg)) == len(a.materiais)
+
+
+COM_SISTEMA = os.path.join(FIXTURES, "journal_com_sistema.log")
+
+
+def test_registros_e_publico_e_devolve_os_eventos():
+    eventos = [r.get("event") for r in ed.registros(COM_SISTEMA)]
+
+    assert eventos == [
+        "FSDJump",
+        "ApproachSettlement",
+        "ColonisationConstructionDepot",
+        "FSDJump",
+    ]
+
+
+def test_a_obra_recebe_o_sistema_corrente():
+    """ApproachSettlement não traz StarSystem; o sistema vem do FSDJump anterior."""
+    (obra,) = ed.extrair_instalacoes(COM_SISTEMA)
+
+    assert obra.sistema == "Wregoe KP-E c25-11"
+
+
+def test_o_sistema_e_o_do_momento_da_obra_nao_o_ultimo_do_log():
+    """O log termina em outro sistema; a obra continua no sistema onde foi vista."""
+    (obra,) = ed.extrair_instalacoes(COM_SISTEMA)
+
+    assert obra.sistema != "Outro Sistema"
+
+
+def test_instalacao_de_payload_aceita_sistema():
+    inst = ed.instalacao_de_payload("X", [], market_id=1, sistema="Sol")
+
+    assert inst.sistema == "Sol"
+
+
+def test_instalacao_de_payload_sem_sistema_fica_vazia():
+    inst = ed.instalacao_de_payload("X", [], market_id=1)
+
+    assert inst.sistema == ""
