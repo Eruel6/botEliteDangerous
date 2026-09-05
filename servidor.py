@@ -138,6 +138,24 @@ async def reconciliar_com_o_canal(canal, autor):
     return recuperadas
 
 
+def esta_pronta(instalacao):
+    """Obra sem material nenhum não conta como pronta: all([]) é True."""
+    return bool(instalacao.materiais) and all(m.completo for m in instalacao.materiais)
+
+
+def finalizar_se_pronta(banco_alvo, registro):
+    """Marca finalizado só quando os materiais estão completos.
+
+    Antes isto era incondicional depois de TEMPO_FINALIZACAO_HORAS, e
+    'finalizado' acabava significando 'ninguém reportou nas últimas 2 horas'.
+    O consolidado depende de 'finalizado' querer dizer 'pronta'.
+    """
+    if not esta_pronta(registro.instalacao):
+        return False
+    banco_alvo.marcar_finalizado(registro.instalacao.nome)
+    return True
+
+
 async def verificar_finalizacoes():
     while True:
         agora = datetime.datetime.now(datetime.timezone.utc)
@@ -146,11 +164,13 @@ async def verificar_finalizacoes():
             horas = (agora - registro.ultima_atualizacao).total_seconds() / 3600
             if horas < TEMPO_FINALIZACAO_HORAS:
                 continue
+            if not esta_pronta(registro.instalacao):
+                continue
             try:
                 mensagem = await buscar_mensagem(canal, registro.message_id)
                 if mensagem is not None:
                     await adicionar_reacao_check(mensagem, registro.instalacao.materiais)
-                banco.marcar_finalizado(registro.instalacao.nome)
+                finalizar_se_pronta(banco, registro)
                 print(f"{CHECK} Finalizado automaticamente: {registro.instalacao.nome}")
             except Exception as e:
                 print(f"Erro ao finalizar {registro.instalacao.nome}: {e}")

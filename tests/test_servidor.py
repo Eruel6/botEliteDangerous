@@ -490,3 +490,49 @@ def test_deve_publicar_encontra_registro_reconciliado_pelo_nome(servidor):
     assert servidor.deve_publicar(chegando) is False, (
         "relato menos completo que o reconciliado deveria ser ignorado"
     )
+
+
+# --- finalizado significa "pronta", não "parada" -----------------------------
+
+
+def _obra_de_teste(nome, requerido, fornecido, market_id):
+    import ed_parser
+
+    return ed_parser.instalacao_de_payload(
+        nome,
+        [{"Name_Localised": "Steel", "RequiredAmount": requerido, "ProvidedAmount": fornecido}],
+        market_id=market_id,
+    )
+
+
+def test_obra_parada_com_material_faltando_continua_pendente(servidor):
+    """Antes, 'finalizado' virava 1 só por inatividade — o que esvaziaria o
+    consolidado justamente das obras que mais precisam de material."""
+    servidor.banco.salvar(_obra_de_teste("Obra Parada", 100, 10, 1), message_id=1)
+
+    finalizou = servidor.finalizar_se_pronta(servidor.banco, servidor.banco.obter("Obra Parada"))
+
+    assert finalizou is False
+    assert servidor.banco.obter("Obra Parada").finalizado is False
+
+
+def test_obra_completa_e_finalizada(servidor):
+    servidor.banco.salvar(_obra_de_teste("Obra Pronta", 100, 100, 2), message_id=2)
+
+    finalizou = servidor.finalizar_se_pronta(servidor.banco, servidor.banco.obter("Obra Pronta"))
+
+    assert finalizou is True
+    assert servidor.banco.obter("Obra Pronta").finalizado is True
+
+
+def test_obra_sem_materiais_nao_e_finalizada(servidor):
+    """all([]) é True: sem guarda, uma obra sem materiais viraria 'pronta'."""
+    import ed_parser
+
+    vazia = ed_parser.instalacao_de_payload("Obra Vazia", [], market_id=3)
+    servidor.banco.salvar(vazia, message_id=3)
+
+    finalizou = servidor.finalizar_se_pronta(servidor.banco, servidor.banco.obter("Obra Vazia"))
+
+    assert finalizou is False
+    assert servidor.banco.obter("Obra Vazia").finalizado is False
