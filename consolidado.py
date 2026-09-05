@@ -4,6 +4,7 @@ Três funções puras: agregar, formatar e decidir o que fazer com a mensagem.
 Nenhuma delas toca banco, Discord ou relógio — quem tem esses é o servidor.
 """
 
+import datetime
 from dataclasses import dataclass
 
 import ed_parser
@@ -134,3 +135,37 @@ def formatar_consolidado(retrato, quando):
 
     resumo = _resumo_do_corte(retrato.linhas[len(corpo):])
     return "\n".join(fixo + corpo + ([resumo] if resumo else []) + fim)
+
+
+JANELA_REPOST_HORAS = 12
+COOLDOWN_REPOST_MINUTOS = 30
+
+
+def decidir_acao(antes, depois, ultimo_repost, agora):
+    """"repostar", "editar" ou "nada".
+
+    O cooldown tem precedência sobre todos os gatilhos: sem ele, "material
+    zerou" faria a mensagem pular para o fim do canal várias vezes num dia de
+    muita entrega.
+    """
+    if antes == depois:
+        return "nada"
+
+    if ultimo_repost is None:
+        return "repostar"
+
+    desde = agora - ultimo_repost
+    if desde < datetime.timedelta(minutes=COOLDOWN_REPOST_MINUTOS):
+        return "editar"
+    if desde > datetime.timedelta(hours=JANELA_REPOST_HORAS):
+        return "repostar"
+
+    if antes.obras != depois.obras:
+        return "repostar"
+
+    materiais_antes = {l.material for l in antes.linhas}
+    materiais_depois = {l.material for l in depois.linhas}
+    if materiais_antes - materiais_depois:
+        return "repostar"
+
+    return "editar"

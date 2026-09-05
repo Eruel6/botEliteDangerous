@@ -186,3 +186,108 @@ def test_o_cabecalho_nao_e_confundido_com_mensagem_de_obra():
     texto = consolidado.formatar_consolidado(retrato, QUANDO)
 
     assert ed_parser.nome_na_mensagem(texto) is None
+
+
+AGORA = datetime.datetime(2026, 9, 5, 20, 0, tzinfo=datetime.timezone.utc)
+HA_UMA_HORA = AGORA - datetime.timedelta(hours=1)
+HA_DEZ_MINUTOS = AGORA - datetime.timedelta(minutes=10)
+HA_UM_DIA = AGORA - datetime.timedelta(days=1)
+
+
+def _retrato(*obras):
+    return consolidado.consolidar(list(obras))
+
+
+def test_nada_mudou_nao_faz_nada():
+    r = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+
+    assert consolidado.decidir_acao(r, r, HA_UMA_HORA, AGORA) == "nada"
+
+
+def test_obra_nova_reposta():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+    depois = _retrato(
+        _obra("A", [_material("Steel", 100, 0)]),
+        _obra("B", [_material("Steel", 100, 0)]),
+    )
+
+    assert consolidado.decidir_acao(antes, depois, HA_UMA_HORA, AGORA) == "repostar"
+
+
+def test_obra_que_ficou_pronta_reposta():
+    antes = _retrato(
+        _obra("A", [_material("Steel", 100, 0)]),
+        _obra("B", [_material("Steel", 100, 0)]),
+    )
+    depois = _retrato(
+        _obra("A", [_material("Steel", 100, 0)]),
+        _obra("B", [_material("Steel", 100, 100)]),
+    )
+
+    assert consolidado.decidir_acao(antes, depois, HA_UMA_HORA, AGORA) == "repostar"
+
+
+def test_material_que_zerou_reposta():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0), _material("Ouro", 10, 0)]))
+    depois = _retrato(_obra("A", [_material("Steel", 100, 0), _material("Ouro", 10, 10)]))
+
+    assert consolidado.decidir_acao(antes, depois, HA_UMA_HORA, AGORA) == "repostar"
+
+
+def test_passou_a_janela_reposta():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+    depois = _retrato(_obra("A", [_material("Steel", 100, 10)]))
+
+    assert consolidado.decidir_acao(antes, depois, HA_UM_DIA, AGORA) == "repostar"
+
+
+def test_progresso_comum_so_edita():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+    depois = _retrato(_obra("A", [_material("Steel", 100, 10)]))
+
+    assert consolidado.decidir_acao(antes, depois, HA_UMA_HORA, AGORA) == "editar"
+
+
+def test_sem_repost_anterior_reposta():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+    depois = _retrato(_obra("A", [_material("Steel", 100, 10)]))
+
+    assert consolidado.decidir_acao(antes, depois, None, AGORA) == "repostar"
+
+
+def test_cooldown_vence_a_obra_nova():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+    depois = _retrato(
+        _obra("A", [_material("Steel", 100, 0)]),
+        _obra("B", [_material("Steel", 100, 0)]),
+    )
+
+    assert consolidado.decidir_acao(antes, depois, HA_DEZ_MINUTOS, AGORA) == "editar"
+
+
+def test_cooldown_vence_a_obra_pronta():
+    antes = _retrato(
+        _obra("A", [_material("Steel", 100, 0)]),
+        _obra("B", [_material("Steel", 100, 0)]),
+    )
+    depois = _retrato(
+        _obra("A", [_material("Steel", 100, 0)]),
+        _obra("B", [_material("Steel", 100, 100)]),
+    )
+
+    assert consolidado.decidir_acao(antes, depois, HA_DEZ_MINUTOS, AGORA) == "editar"
+
+
+def test_cooldown_vence_o_material_zerado():
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0), _material("Ouro", 10, 0)]))
+    depois = _retrato(_obra("A", [_material("Steel", 100, 0), _material("Ouro", 10, 10)]))
+
+    assert consolidado.decidir_acao(antes, depois, HA_DEZ_MINUTOS, AGORA) == "editar"
+
+
+def test_cooldown_vence_a_janela():
+    """Impossível na prática, mas fixa a precedência: o cooldown vem primeiro."""
+    antes = _retrato(_obra("A", [_material("Steel", 100, 0)]))
+    depois = _retrato(_obra("A", [_material("Steel", 100, 10)]))
+
+    assert consolidado.decidir_acao(antes, depois, HA_DEZ_MINUTOS, AGORA) == "editar"
