@@ -1,0 +1,6 @@
+{ "timestamp":"2025-05-20T17:00:00Z", "event":"FSDJump", "StarSystem":"Wregoe KP-E c25-11" }
+{ "timestamp":"2025-05-20T17:06:00Z", "event":"ColonisationConstructionDepot", "MarketID":901, "ResourcesRequired":[{"Name":"$Steel_name;","Name_Localised":"Aço","RequiredAmount":100,"ProvidedAmount":10}] }
+{ "timestamp":"2025-05-20T17:37:50Z", "event":"ColonisationContribution", "MarketID":901, "Contributions":[{"Name":"$Aluminium_name;","Name_Localised":"Alumínio","Amount":720}] }
+{ "timestamp":"2025-05-20T17:40:00Z", "event":"ColonisationContribution", "MarketID":901, "Contributions":[{"Name":"$Steel_name;","Name_Localised":"Aço","Amount":10},{"Name":"$Gold_name;","Name_Localised":"Ouro","Amount":5}] }
+{ "timestamp":"2025-05-20T18:00:00Z", "event":"FSDJump", "StarSystem":"Outro Sistema" }
+{ "timestamp":"2025-05-20T18:10:00Z", "event":"ColonisationConstructionDepot", "MarketID":902, "ResourcesRequired":[{"Name":"$Gold_name;","Name_Localised":"Ouro","RequiredAmount":50,"ProvidedAmount":0}] }
