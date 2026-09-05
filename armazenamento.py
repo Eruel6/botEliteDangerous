@@ -32,6 +32,29 @@ CREATE TABLE IF NOT EXISTS meta (
 )
 """
 
+ESQUEMA_CARGA = """
+CREATE TABLE IF NOT EXISTS carga (
+    quem       TEXT    NOT NULL,
+    material   TEXT    NOT NULL,
+    quantidade INTEGER NOT NULL,
+    alvo       INTEGER,
+    sistema    TEXT    NOT NULL DEFAULT '',
+    quando     TEXT    NOT NULL,
+    PRIMARY KEY (quem, material)
+)
+"""
+
+ESQUEMA_ENTREGAS = """
+CREATE TABLE IF NOT EXISTS entregas (
+    quando     TEXT    NOT NULL,
+    market_id  INTEGER NOT NULL,
+    material   TEXT    NOT NULL,
+    quem       TEXT    NOT NULL,
+    quantidade INTEGER NOT NULL,
+    PRIMARY KEY (quando, market_id, material, quem)
+)
+"""
+
 
 @dataclass
 class Registro:
@@ -49,6 +72,7 @@ def _agora():
 COLUNAS_NOVAS = {
     "market_id": "INTEGER",
     "reportado_por": "TEXT NOT NULL DEFAULT ''",
+    "sistema": "TEXT NOT NULL DEFAULT ''",
 }
 
 
@@ -61,6 +85,8 @@ class Armazenamento:
         self._conexao.row_factory = sqlite3.Row
         self._conexao.execute(ESQUEMA)
         self._conexao.execute(ESQUEMA_META)
+        self._conexao.execute(ESQUEMA_CARGA)
+        self._conexao.execute(ESQUEMA_ENTREGAS)
         self._migrar()
         self._conexao.commit()
 
@@ -98,12 +124,14 @@ class Armazenamento:
 
         self._conexao.execute(
             "INSERT INTO instalacoes "
-            "(nome, message_id, materiais, ultima_atualizacao, finalizado, market_id, reportado_por) "
-            "VALUES (?, ?, ?, ?, 0, ?, ?) "
+            "(nome, message_id, materiais, ultima_atualizacao, finalizado, market_id, "
+            "reportado_por, sistema) "
+            "VALUES (?, ?, ?, ?, 0, ?, ?, ?) "
             "ON CONFLICT(nome) DO UPDATE SET "
             "message_id=excluded.message_id, materiais=excluded.materiais, "
             "ultima_atualizacao=excluded.ultima_atualizacao, finalizado=0, "
-            "market_id=excluded.market_id, reportado_por=excluded.reportado_por",
+            "market_id=excluded.market_id, reportado_por=excluded.reportado_por, "
+            "sistema=excluded.sistema",
             (
                 instalacao.nome,
                 message_id,
@@ -111,6 +139,7 @@ class Armazenamento:
                 (quando or _agora()).isoformat(),
                 instalacao.market_id,
                 reportado_por,
+                instalacao.sistema,
             ),
         )
         self._conexao.commit()
@@ -167,6 +196,59 @@ class Armazenamento:
         )
         self._conexao.commit()
 
+    def substituir_carga(self, quem, itens, alvo, sistema, quando=None):
+        """Troca o porão inteiro dessa pessoa. Sem delta: o retrato manda."""
+        momento = (quando or _agora()).isoformat()
+        self._conexao.execute("DELETE FROM carga WHERE quem = ?", (quem,))
+        self._conexao.executemany(
+            "INSERT INTO carga (quem, material, quantidade, alvo, sistema, quando) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (quem, material, int(quantidade), alvo, sistema, momento)
+                for material, quantidade in itens.items()
+                if int(quantidade) > 0
+            ],
+        )
+        self._conexao.commit()
+
+    def listar_carga(self, desde=None):
+        """Linhas de carga; com ``desde``, só as relatadas a partir daquele momento."""
+        sql = "SELECT * FROM carga"
+        parametros = ()
+        if desde is not None:
+            sql += " WHERE quando >= ?"
+            parametros = (desde.isoformat(),)
+        return [dict(l) for l in self._conexao.execute(sql, parametros)]
+
+    def registrar_entregas(self, quem, entregas):
+        """Grava o que ainda não estava lá. Devolve quantas entraram.
+
+        O cliente reenvia a sessão inteira a cada ciclo; a chave primária
+        composta é o que torna isso barato em vez de destrutivo.
+        """
+        antes = self._conexao.total_changes
+        self._conexao.executemany(
+            "INSERT OR IGNORE INTO entregas "
+            "(quando, market_id, material, quem, quantidade) VALUES (?, ?, ?, ?, ?)",
+            [
+                (e["quando"], e["market_id"], e["material"], quem, int(e["quantidade"]))
+                for e in entregas
+            ],
+        )
+        self._conexao.commit()
+        return self._conexao.total_changes - antes
+
+    def entregas_por_pessoa(self, market_id):
+        """{quem: toneladas entregues} naquela obra."""
+        return {
+            l["quem"]: l["total"]
+            for l in self._conexao.execute(
+                "SELECT quem, SUM(quantidade) AS total FROM entregas "
+                "WHERE market_id = ? GROUP BY quem",
+                (market_id,),
+            )
+        }
+
     def remover(self, nome):
         self._conexao.execute("DELETE FROM instalacoes WHERE nome = ?", (nome,))
         self._conexao.commit()
@@ -182,6 +264,7 @@ class Armazenamento:
                 linha["nome"],
                 json.loads(linha["materiais"]),
                 market_id=linha["market_id"] if "market_id" in chaves else None,
+                sistema=(linha["sistema"] if "sistema" in chaves else "") or "",
             ),
             message_id=linha["message_id"],
             ultima_atualizacao=datetime.datetime.fromisoformat(linha["ultima_atualizacao"]),

@@ -213,3 +213,71 @@ def test_meta_sobrevive_a_reabertura_do_banco(tmp_path):
     arm.Armazenamento(caminho).definir_meta("chave", "valor")
 
     assert arm.Armazenamento(caminho).obter_meta("chave") == "valor"
+
+
+def test_a_obra_guarda_e_devolve_o_sistema(banco):
+    inst = ed_parser.instalacao_de_payload("Obra", [], market_id=1, sistema="Sol")
+
+    banco.salvar(inst, message_id=1)
+
+    assert banco.obter("Obra").instalacao.sistema == "Sol"
+
+
+def test_carga_substitui_a_anterior_da_mesma_pessoa(banco):
+    banco.substituir_carga("Eruel", {"Aço": 100}, alvo=1, sistema="Sol")
+    banco.substituir_carga("Eruel", {"Ouro": 50}, alvo=1, sistema="Sol")
+
+    linhas = banco.listar_carga()
+    assert len(linhas) == 1
+    assert linhas[0]["material"] == "Ouro"
+
+
+def test_carga_de_outra_pessoa_nao_e_afetada(banco):
+    banco.substituir_carga("Eruel", {"Aço": 100}, alvo=1, sistema="Sol")
+    banco.substituir_carga("btpopov", {"Ouro": 50}, alvo=1, sistema="Sol")
+    banco.substituir_carga("Eruel", {"Aço": 200}, alvo=1, sistema="Sol")
+
+    por_pessoa = {l["quem"]: l["quantidade"] for l in banco.listar_carga()}
+    assert por_pessoa == {"Eruel": 200, "btpopov": 50}
+
+
+def test_carga_velha_e_filtrada_pelo_desde(banco):
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    ha_uma_hora = agora - datetime.timedelta(hours=1)
+    banco.substituir_carga("Antigo", {"Aço": 100}, alvo=1, sistema="Sol", quando=ha_uma_hora)
+    banco.substituir_carga("Novo", {"Ouro": 50}, alvo=1, sistema="Sol", quando=agora)
+
+    corte = agora - datetime.timedelta(minutes=15)
+    assert [l["quem"] for l in banco.listar_carga(desde=corte)] == ["Novo"]
+
+
+def test_entregas_reenviadas_nao_duplicam(banco):
+    entregas = [
+        {"quando": "2025-05-20T17:37:50Z", "market_id": 901, "material": "Alumínio", "quantidade": 720}
+    ]
+
+    banco.registrar_entregas("Eruel", entregas)
+    banco.registrar_entregas("Eruel", entregas)
+
+    assert banco.entregas_por_pessoa(901) == {"Eruel": 720}
+
+
+def test_entregas_somam_por_pessoa(banco):
+    banco.registrar_entregas("Eruel", [
+        {"quando": "2025-05-20T17:00:00Z", "market_id": 901, "material": "Aço", "quantidade": 100},
+        {"quando": "2025-05-20T18:00:00Z", "market_id": 901, "material": "Ouro", "quantidade": 40},
+    ])
+    banco.registrar_entregas("btpopov", [
+        {"quando": "2025-05-20T19:00:00Z", "market_id": 901, "material": "Aço", "quantidade": 70},
+    ])
+
+    assert banco.entregas_por_pessoa(901) == {"Eruel": 140, "btpopov": 70}
+
+
+def test_entregas_de_outra_obra_nao_entram(banco):
+    banco.registrar_entregas("Eruel", [
+        {"quando": "2025-05-20T17:00:00Z", "market_id": 901, "material": "Aço", "quantidade": 100},
+        {"quando": "2025-05-20T17:00:00Z", "market_id": 902, "material": "Aço", "quantidade": 999},
+    ])
+
+    assert banco.entregas_por_pessoa(901) == {"Eruel": 100}
