@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS instalacoes (
 )
 """
 
+ESQUEMA_META = """
+CREATE TABLE IF NOT EXISTS meta (
+    chave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+)
+"""
+
 
 @dataclass
 class Registro:
@@ -53,6 +60,7 @@ class Armazenamento:
         self._conexao = sqlite3.connect(self.caminho)
         self._conexao.row_factory = sqlite3.Row
         self._conexao.execute(ESQUEMA)
+        self._conexao.execute(ESQUEMA_META)
         self._migrar()
         self._conexao.commit()
 
@@ -143,6 +151,20 @@ class Armazenamento:
 
     def marcar_finalizado(self, nome):
         self._conexao.execute("UPDATE instalacoes SET finalizado = 1 WHERE nome = ?", (nome,))
+        self._conexao.commit()
+
+    def obter_meta(self, chave, padrao=None):
+        linha = self._conexao.execute(
+            "SELECT valor FROM meta WHERE chave = ?", (chave,)
+        ).fetchone()
+        return linha["valor"] if linha else padrao
+
+    def definir_meta(self, chave, valor):
+        self._conexao.execute(
+            "INSERT INTO meta (chave, valor) VALUES (?, ?) "
+            "ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor",
+            (chave, str(valor)),
+        )
         self._conexao.commit()
 
     def remover(self, nome):

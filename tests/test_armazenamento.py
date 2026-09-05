@@ -188,3 +188,28 @@ def test_migra_banco_antigo_sem_as_colunas_novas(tmp_path):
     assert registro.message_id == 77, "o dado antigo não pode ser perdido"
     assert registro.reportado_por == ""
     assert registro.instalacao.market_id is None
+
+
+def test_meta_devolve_o_padrao_quando_a_chave_nao_existe(banco):
+    assert banco.obter_meta("consolidado_message_id") is None
+    assert banco.obter_meta("consolidado_message_id", "vazio") == "vazio"
+
+
+def test_meta_guarda_e_devolve(banco):
+    banco.definir_meta("consolidado_message_id", "12345")
+
+    assert banco.obter_meta("consolidado_message_id") == "12345"
+
+
+def test_meta_sobrescreve_a_chave_existente(banco):
+    banco.definir_meta("consolidado_message_id", "12345")
+    banco.definir_meta("consolidado_message_id", "67890")
+
+    assert banco.obter_meta("consolidado_message_id") == "67890"
+
+
+def test_meta_sobrevive_a_reabertura_do_banco(tmp_path):
+    caminho = str(tmp_path / "estado.db")
+    arm.Armazenamento(caminho).definir_meta("chave", "valor")
+
+    assert arm.Armazenamento(caminho).obter_meta("chave") == "valor"
