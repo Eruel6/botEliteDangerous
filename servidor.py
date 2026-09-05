@@ -340,6 +340,50 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     return JSONResponse(content={"status": "ok"})
 
 
+@app.post("/comandante")
+async def receber_comandante(request: Request, x_api_token: str = Header(default=None)):
+    """Carga e entregas de uma pessoa. Não depende do Discord.
+
+    O /logdata devolve 503 enquanto o bot não conecta; aqui isso custaria a
+    carga do ciclo inteiro por nada, já que este endpoint só escreve no banco.
+    """
+    quem = conferir_token(x_api_token)
+
+    data = await request.json()
+    carga = data.get("carga") or []
+    entregas = data.get("entregas") or []
+    alvo = data.get("alvo") or {}
+
+    if not isinstance(carga, list) or not isinstance(entregas, list) or not isinstance(alvo, dict):
+        raise HTTPException(status_code=400, detail="Dados inválidos.")
+
+    itens = {}
+    for item in carga:
+        if not isinstance(item, dict):
+            continue
+        material = item.get("material")
+        quantidade = item.get("quantidade") or 0
+        if material and quantidade > 0:
+            itens[material] = itens.get(material, 0) + int(quantidade)
+
+    banco.substituir_carga(
+        quem, itens, alvo=alvo.get("market_id"), sistema=alvo.get("sistema") or ""
+    )
+    banco.registrar_entregas(
+        quem,
+        [
+            e
+            for e in entregas
+            if isinstance(e, dict)
+            and e.get("quando")
+            and e.get("market_id") is not None
+            and e.get("material")
+            and (e.get("quantidade") or 0) > 0
+        ],
+    )
+    return JSONResponse(content={"status": "ok"})
+
+
 @app.get("/health")
 async def health():
     return {"discord_pronto": client.is_ready(), "instalacoes": len(banco.listar())}

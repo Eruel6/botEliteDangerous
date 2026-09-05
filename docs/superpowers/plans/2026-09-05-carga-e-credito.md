@@ -975,6 +975,13 @@ git commit -m "Guarda carga em trânsito e entregas por pessoa"
 
 - [ ] **Step 1: Escrever os testes que falham**
 
+**Atenção — não testar este endpoint pelo TestClient.** O `TestClient` roda a
+app numa thread de portal, e a conexão sqlite foi criada na thread da
+importação: qualquer escrita dá `sqlite3.ProgrammingError`. Em produção o caso
+não existe (o uvicorn roda os handlers `async` na mesma thread do loop), e é por
+isso que o resto deste arquivo chama as corrotinas direto e reserva o
+`TestClient` para a superfície de autenticação, que não toca o banco.
+
 Acrescentar ao fim de `tests/test_servidor.py`:
 
 ```python

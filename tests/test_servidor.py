@@ -742,3 +742,89 @@ def test_nada_mudou_nao_toca_no_canal(servidor):
     assert canal.enviadas == []
     assert existente.editada_para is None
     assert existente.apagada is False
+
+
+# --- endpoint do comandante ---------------------------------------------------
+
+
+class RequisicaoFalsa:
+    """Imita o Request do FastAPI: só o .json() é usado por receber_comandante."""
+
+    def __init__(self, corpo):
+        self._corpo = corpo
+
+    async def json(self):
+        return self._corpo
+
+
+PAYLOAD_COMANDANTE = {
+    "carga": [{"material": "Alumínio", "quantidade": 720}],
+    "alvo": {"market_id": 901, "sistema": "Sol"},
+    "entregas": [
+        {"quando": "2025-05-20T17:37:50Z", "market_id": 901,
+         "material": "Alumínio", "quantidade": 720}
+    ],
+}
+
+
+def test_comandante_sem_token_e_401(cliente_http):
+    """Este passa pelo HTTP porque conferir_token barra antes de tocar o banco."""
+    assert cliente_http.post("/comandante", json=PAYLOAD_COMANDANTE).status_code == 401
+
+
+def test_comandante_grava_carga_e_entregas(servidor_multi):
+    """Chama a corrotina direto, como o resto deste arquivo faz.
+
+    Pelo TestClient a app roda numa thread de portal, e a conexão sqlite foi
+    criada na thread da importação — daria ProgrammingError. Em produção o
+    uvicorn roda os handlers async na mesma thread do loop, então o caso não
+    existe fora do teste.
+    """
+    resposta = asyncio.run(
+        servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa")
+    )
+
+    assert resposta.status_code == 200
+    assert [l["material"] for l in servidor_multi.banco.listar_carga()] == ["Alumínio"]
+    assert servidor_multi.banco.entregas_por_pessoa(901) == {"Arthur": 720}
+
+
+def test_comandante_nao_depende_do_discord(servidor_multi):
+    """O /logdata devolve 503 sem o bot pronto; este endpoint não pode."""
+    assert servidor_multi.client.is_ready() is False
+
+    resposta = asyncio.run(
+        servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa")
+    )
+
+    assert resposta.status_code == 200
+
+
+def test_comandante_com_carga_invalida_e_400(servidor_multi):
+    import pytest as _pytest
+
+    with _pytest.raises(Exception) as erro:
+        asyncio.run(
+            servidor_multi.receber_comandante(RequisicaoFalsa({"carga": "não é lista"}), "aaa")
+        )
+
+    assert erro.value.status_code == 400
+
+
+def test_comandante_reenviado_nao_duplica_entrega(servidor_multi):
+    """O cliente reenvia a sessão inteira a cada ciclo."""
+    for _ in range(3):
+        asyncio.run(
+            servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa")
+        )
+
+    assert servidor_multi.banco.entregas_por_pessoa(901) == {"Arthur": 720}
+
+
+def test_comandante_substitui_a_carga_anterior(servidor_multi):
+    asyncio.run(servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa"))
+    outro = dict(PAYLOAD_COMANDANTE, carga=[{"material": "Aço", "quantidade": 50}])
+
+    asyncio.run(servidor_multi.receber_comandante(RequisicaoFalsa(outro), "aaa"))
+
+    assert [l["material"] for l in servidor_multi.banco.listar_carga()] == ["Aço"]
