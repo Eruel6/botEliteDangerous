@@ -828,3 +828,35 @@ def test_comandante_substitui_a_carga_anterior(servidor_multi):
     asyncio.run(servidor_multi.receber_comandante(RequisicaoFalsa(outro), "aaa"))
 
     assert [l["material"] for l in servidor_multi.banco.listar_carga()] == ["Aço"]
+
+
+def _obra_de_teste_com_sistema(nome, requerido, fornecido, market_id, sistema):
+    import ed_parser
+
+    return ed_parser.instalacao_de_payload(
+        nome,
+        [{"Name_Localised": "Steel", "RequiredAmount": requerido, "ProvidedAmount": fornecido}],
+        market_id=market_id,
+        sistema=sistema,
+    )
+
+
+def test_a_caminho_ignora_carga_mais_velha_que_a_validade(servidor):
+    import datetime
+
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    servidor.banco.salvar(
+        _obra_de_teste_com_sistema("Obra", 1000, 0, market_id=901, sistema="Sol"),
+        message_id=1,
+    )
+    servidor.banco.substituir_carga(
+        "Antigo", {"Steel": 300}, alvo=901, sistema="Sol",
+        quando=agora - datetime.timedelta(hours=1),
+    )
+    servidor.banco.substituir_carga(
+        "Novo", {"Steel": 200}, alvo=901, sistema="Sol", quando=agora
+    )
+
+    obras = [r.instalacao for r in servidor.banco.listar(pendentes=True)]
+
+    assert servidor.a_caminho_por_material(servidor.banco, obras, agora) == {"Steel": 200}

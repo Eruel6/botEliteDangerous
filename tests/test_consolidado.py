@@ -291,3 +291,46 @@ def test_cooldown_vence_a_janela():
     depois = _retrato(_obra("A", [_material("Steel", 100, 10)]))
 
     assert consolidado.decidir_acao(antes, depois, HA_DEZ_MINUTOS, AGORA) == "editar"
+
+
+def test_a_caminho_entra_na_linha_do_material():
+    obras = [_obra("A", [_material("Steel", 1000, 0)])]
+
+    retrato = consolidado.consolidar(obras, a_caminho={"Steel": 400})
+
+    assert retrato.linhas[0].faltando == 1000
+    assert retrato.linhas[0].a_caminho == 400
+
+
+def test_sem_carga_a_caminho_a_coluna_nao_aparece():
+    retrato = consolidado.consolidar([_obra("A", [_material("Steel", 100, 0)])])
+
+    assert "A caminho" not in consolidado.formatar_consolidado(retrato, QUANDO)
+
+
+def test_com_carga_a_caminho_a_coluna_aparece():
+    retrato = consolidado.consolidar(
+        [_obra("A", [_material("Steel", 1000, 0)])], a_caminho={"Steel": 400}
+    )
+
+    texto = consolidado.formatar_consolidado(retrato, QUANDO)
+
+    assert "A caminho" in texto
+    assert "400" in texto
+
+
+def test_a_ordenacao_nao_muda_por_causa_da_carga_a_caminho():
+    """Ordena por faltando, não por 'faltando menos o que vem' — carga evapora."""
+    obras = [_obra("A", [_material("Steel", 1000, 0), _material("Ouro", 900, 0)])]
+
+    retrato = consolidado.consolidar(obras, a_caminho={"Steel": 950})
+
+    assert [l.material for l in retrato.linhas] == ["Steel", "Ouro"]
+
+
+def test_material_a_caminho_que_ninguem_precisa_e_ignorado():
+    obras = [_obra("A", [_material("Steel", 100, 0)])]
+
+    retrato = consolidado.consolidar(obras, a_caminho={"Platina": 500})
+
+    assert [l.material for l in retrato.linhas] == ["Steel"]

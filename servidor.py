@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 import armazenamento
 import consolidado
 import ed_parser
+import transito
 
 load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -26,6 +27,7 @@ API_TOKENS_BRUTO = os.getenv("API_TOKENS", "")
 API_TOKEN = os.getenv("API_TOKEN")
 
 TEMPO_FINALIZACAO_HORAS = 2
+VALIDADE_CARGA_MINUTOS = 15
 MENSAGENS_A_VARRER = 200
 INTERVALO_VERIFICACAO_SEGUNDOS = 600
 CHECK = "✅"
@@ -183,10 +185,37 @@ async def reconciliar_consolidado(canal, autor):
     return escolhida
 
 
-def retrato_atual(banco_alvo):
+def a_caminho_por_material(banco_alvo, obras, agora):
+    """{material: total a caminho}, já limitado pelo que cada obra ainda precisa.
+
+    Carga relatada há mais de VALIDADE_CARGA_MINUTOS é ignorada: quem desloga
+    com o porão cheio esconderia material do esquadrão indefinidamente.
+    """
+    corte = agora - datetime.timedelta(minutes=VALIDADE_CARGA_MINUTOS)
+    por_pessoa = {}
+    for linha in banco_alvo.listar_carga(desde=corte):
+        dados = por_pessoa.setdefault(
+            linha["quem"], {"carga": {}, "alvo": linha["alvo"], "sistema": linha["sistema"]}
+        )
+        dados["carga"][linha["material"]] = linha["quantidade"]
+
+    total = {}
+    for dados in por_pessoa.values():
+        atribuido = transito.atribuir(
+            dados["carga"], obras, dados["alvo"], dados["sistema"]
+        )
+        for materiais in atribuido.values():
+            for material, quantidade in materiais.items():
+                total[material] = total.get(material, 0) + quantidade
+    return total
+
+
+def retrato_atual(banco_alvo, agora=None):
     """Consolidado do que está aberto agora, direto do banco."""
+    obras = [r.instalacao for r in banco_alvo.listar(pendentes=True)]
+    momento = agora or datetime.datetime.now(datetime.timezone.utc)
     return consolidado.consolidar(
-        [r.instalacao for r in banco_alvo.listar(pendentes=True)]
+        obras, a_caminho=a_caminho_por_material(banco_alvo, obras, momento)
     )
 
 
