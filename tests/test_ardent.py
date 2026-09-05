@@ -1,3 +1,4 @@
+import datetime
 import json
 import os
 import sys
@@ -6,6 +7,8 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 
 import ardent
+
+AGORA = datetime.datetime(2026, 9, 5, tzinfo=datetime.timezone.utc)
 
 
 class RespostaFalsa:
@@ -126,3 +129,81 @@ def test_resposta_que_nao_e_lista_devolve_none(monkeypatch):
     monkeypatch.setattr(ardent.requests, "get", lambda *a, **k: RespostaFalsa(200, {"a": 1}))
 
     assert ardent.consultar("Sol", "aluminium", volume_minimo=100) is None
+
+
+def _estacao(nome, distancia=10, preco=100, pad=3, dias=1, carrier=False, estoque=9999):
+    quando = AGORA - datetime.timedelta(days=dias)
+    return ardent.Estacao(
+        nome=nome,
+        sistema="Sistema",
+        distancia_ly=distancia,
+        distancia_ls=100,
+        estoque=estoque,
+        preco=preco,
+        pad=pad,
+        carrier=carrier,
+        atualizado_em=quando.isoformat().replace("+00:00", "Z"),
+    )
+
+
+def test_pad_do_type9_e_grande():
+    assert ardent.pad_necessario("type9") == 3
+
+
+def test_nave_desconhecida_nao_filtra_pad():
+    assert ardent.pad_necessario("nave_que_nao_existe") == 1
+
+
+def test_nave_vazia_nao_filtra_pad():
+    assert ardent.pad_necessario("") == 1
+
+
+def test_estacao_com_pad_pequeno_e_descartada():
+    estacoes = [_estacao("Grande", pad=3), _estacao("Media", pad=2)]
+
+    assert [e.nome for e in ardent.melhores(estacoes, pad_minimo=3, agora=AGORA)] == ["Grande"]
+
+
+def test_pad_minimo_1_nao_descarta_ninguem():
+    estacoes = [_estacao("Grande", pad=3), _estacao("Media", pad=2)]
+
+    assert len(ardent.melhores(estacoes, pad_minimo=1, agora=AGORA)) == 2
+
+
+def test_dado_velho_e_descartado():
+    estacoes = [_estacao("Fresca", dias=5), _estacao("Velha", dias=90)]
+
+    assert [e.nome for e in ardent.melhores(estacoes, pad_minimo=1, agora=AGORA)] == ["Fresca"]
+
+
+def test_data_ilegivel_e_descartada():
+    ruim = ardent.Estacao("Ruim", "S", 1, 1, 100, 100, 3, False, "nao é data")
+
+    assert ardent.melhores([ruim], pad_minimo=1, agora=AGORA) == []
+
+
+def test_ordena_por_distancia_e_desempata_por_preco():
+    estacoes = [
+        _estacao("Longe", distancia=90, preco=10),
+        _estacao("Perto caro", distancia=10, preco=500),
+        _estacao("Perto barato", distancia=10, preco=100),
+    ]
+
+    nomes = [e.nome for e in ardent.melhores(estacoes, pad_minimo=1, agora=AGORA)]
+
+    assert nomes == ["Perto barato", "Perto caro", "Longe"]
+
+
+def test_corta_em_tres():
+    estacoes = [_estacao(f"E{i}", distancia=i) for i in range(10)]
+
+    assert len(ardent.melhores(estacoes, pad_minimo=1, agora=AGORA)) == 3
+
+
+def test_fleet_carrier_sobrevive_aos_filtros():
+    """O Arthur decidiu manter carrier; ele sai marcado, não excluído."""
+    estacoes = [_estacao("Carrier", carrier=True)]
+
+    (resultado,) = ardent.melhores(estacoes, pad_minimo=1, agora=AGORA)
+
+    assert resultado.carrier is True

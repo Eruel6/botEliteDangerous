@@ -4,6 +4,7 @@ API pública, sem chave e sem SLA. Roda no cliente, nunca no servidor: a pergunt
 é "perto de mim", e o que está perto de um piloto não está perto do outro.
 """
 
+import datetime
 import urllib.parse
 from dataclasses import dataclass
 
@@ -81,3 +82,63 @@ def consultar(sistema, material, volume_minimo, raio=RAIO_PADRAO_LY):
     if not isinstance(dados, list):
         return None
     return [_para_estacao(b) for b in dados if isinstance(b, dict)]
+
+
+VALIDADE_DIAS = 30
+MAXIMO_POR_MATERIAL = 3
+
+#: Pad exigido por nave: 1 pequeno, 2 médio, 3 grande.
+#:
+#: Só nave de pad grande ganha alguma coisa com este filtro — nave pequena e
+#: média pousa em qualquer lugar. Por isso a tabela lista só as grandes, e
+#: qualquer nave ausente cai no padrão 1, que não filtra nada. Filtrar errado
+#: esconderia estação boa; não filtrar só deixa passar estação ruim.
+#:
+#: type9 está confirmado pelo Loadout real do Arthur. O resto é dado a conferir.
+PAD_POR_NAVE = {
+    "type9": 3,
+    "type9_military": 3,
+    "type7": 3,
+    "anaconda": 3,
+    "cutter": 3,
+    "federation_corvette": 3,
+    "belugaliner": 3,
+    "independant_trader": 3,
+    "typex_3": 3,
+}
+
+
+def pad_necessario(nave):
+    return PAD_POR_NAVE.get((nave or "").lower(), 1)
+
+
+def _idade_em_dias(atualizado_em, agora):
+    """None quando a data não é legível — nesse caso a estação é descartada."""
+    try:
+        quando = datetime.datetime.fromisoformat(
+            (atualizado_em or "").replace("Z", "+00:00")
+        )
+    except ValueError:
+        return None
+    if quando.tzinfo is None:
+        quando = quando.replace(tzinfo=datetime.timezone.utc)
+    return (agora - quando).total_seconds() / 86400
+
+
+def melhores(estacoes, pad_minimo, agora, quantas=MAXIMO_POR_MATERIAL):
+    """As melhores estações depois dos filtros de pad e validade.
+
+    Estoque e raio já foram filtrados pela própria API, via minVolume e
+    maxDistance — melhor cortar lá do que baixar e descartar aqui.
+    """
+    servem = []
+    for estacao in estacoes:
+        if estacao.pad < pad_minimo:
+            continue
+        idade = _idade_em_dias(estacao.atualizado_em, agora)
+        if idade is None or idade > VALIDADE_DIAS:
+            continue
+        servem.append(estacao)
+
+    servem.sort(key=lambda e: (e.distancia_ly, e.preco, e.nome))
+    return servem[:quantas]
