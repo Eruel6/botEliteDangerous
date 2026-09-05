@@ -1,5 +1,6 @@
 """O loop do cliente: lê o Journal e envia as instalações que mudaram."""
 
+import collections
 import json
 import time
 
@@ -9,6 +10,10 @@ import ed_parser
 
 INTERVALO_CHECAGEM = 60
 TIMEOUT_SEGUNDOS = 30
+LIMITE_DETALHE = 200
+
+#: Resposta do servidor. ``status`` é None quando a requisição nem aconteceu.
+Resposta = collections.namedtuple("Resposta", "status detalhe")
 
 
 def payload_de(instalacao):
@@ -26,8 +31,36 @@ def payload_de(instalacao):
     }
 
 
+def _resumir(texto):
+    """Uma linha curta: o painel mostra um erro por linha de tabela."""
+    texto = " ".join((texto or "").split())
+    if len(texto) > LIMITE_DETALHE:
+        texto = texto[:LIMITE_DETALHE] + "…"
+    return texto
+
+
+def _detalhe_da(resp):
+    """O que o corpo da resposta explica sobre o status.
+
+    Sem isso o painel mostrava só o número, e os dois 503 possíveis ficavam
+    indistinguíveis: o bot do Discord ainda não pronto (o FastAPI responde
+    ``{"detail": ...}``) e o edge do Render acordando o serviço hibernado
+    (responde uma página HTML inteira, daí o corte em _resumir).
+    """
+    try:
+        corpo = resp.json()
+    except Exception:
+        corpo = None
+    if isinstance(corpo, dict) and isinstance(corpo.get("detail"), str):
+        return _resumir(corpo["detail"])
+    return _resumir(resp.text)
+
+
+def _com_detalhe(prefixo, detalhe):
+    return f"{prefixo} — {detalhe}" if detalhe else prefixo
+
+
 def enviar_para_api(payload, config):
-    """Status HTTP da resposta, ou None se a requisição nem aconteceu."""
     try:
         resp = requests.post(
             config.api_url,
@@ -35,9 +68,9 @@ def enviar_para_api(payload, config):
             headers={"X-API-Token": config.api_token},
             timeout=TIMEOUT_SEGUNDOS,
         )
-        return resp.status_code
-    except Exception:
-        return None
+        return Resposta(resp.status_code, _detalhe_da(resp))
+    except Exception as e:
+        return Resposta(None, _resumir(f"{type(e).__name__}: {e}"))
 
 
 def sincronizar(log_path, memoria, config, estado_cliente, enviar=enviar_para_api):
@@ -58,15 +91,22 @@ def sincronizar(log_path, memoria, config, estado_cliente, enviar=enviar_para_ap
         if memoria.get(instalacao.nome) == assinatura:
             continue
 
-        status = enviar(payload, config)
-        estado_cliente.registrar_envio(status or 0)
+        resposta = enviar(payload, config)
+        estado_cliente.registrar_envio(resposta.status or 0)
 
-        if status is not None and 200 <= status < 300:
+        if resposta.status is not None and 200 <= resposta.status < 300:
             memoria[instalacao.nome] = assinatura
-        elif status is None:
-            estado_cliente.registrar_erro(f"{instalacao.nome}: falha de rede ao enviar")
+        elif resposta.status is None:
+            estado_cliente.registrar_erro(
+                _com_detalhe(f"{instalacao.nome}: falha de rede ao enviar", resposta.detalhe)
+            )
         else:
-            estado_cliente.registrar_erro(f"{instalacao.nome}: servidor respondeu {status}")
+            estado_cliente.registrar_erro(
+                _com_detalhe(
+                    f"{instalacao.nome}: servidor respondeu {resposta.status}",
+                    resposta.detalhe,
+                )
+            )
 
 
 def rodar(config, estado_cliente, intervalo=INTERVALO_CHECAGEM):
