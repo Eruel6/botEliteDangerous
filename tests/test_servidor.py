@@ -536,3 +536,102 @@ def test_obra_sem_materiais_nao_e_finalizada(servidor):
 
     assert finalizou is False
     assert servidor.banco.obter("Obra Vazia").finalizado is False
+
+
+# --- reconciliação da mensagem de consolidado --------------------------------
+
+
+class MensagemDatada(MensagemComConteudo):
+    def __init__(self, id, content, author, created_at):
+        super().__init__(id, content, author)
+        self.created_at = created_at
+        self.apagada = False
+        self.editada_para = None
+
+    async def delete(self):
+        self.apagada = True
+
+    async def edit(self, content=None):
+        self.editada_para = content
+
+
+def _quando(horas):
+    import datetime
+
+    return datetime.datetime(2026, 9, 5, tzinfo=datetime.timezone.utc) + datetime.timedelta(hours=horas)
+
+
+def test_reconhece_a_mensagem_de_consolidado(servidor):
+    import consolidado
+
+    assert servidor.e_mensagem_de_consolidado(consolidado.CABECALHO + " `3 obras`")
+
+
+def test_mensagem_de_obra_nao_e_confundida_com_consolidado(servidor):
+    assert not servidor.e_mensagem_de_consolidado(
+        "📍 **Materiais para instalação:** `Pedder's Forge`"
+    )
+
+
+def test_escolhe_a_mais_recente_e_separa_as_outras(servidor):
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    mensagens = [
+        MensagemDatada(1, consolidado.CABECALHO, bot, _quando(0)),
+        MensagemDatada(2, consolidado.CABECALHO, bot, _quando(2)),
+        MensagemDatada(3, consolidado.CABECALHO, bot, _quando(1)),
+    ]
+
+    escolhida, apagar = servidor.escolher_consolidado(mensagens)
+
+    assert escolhida.id == 2
+    assert sorted(m.id for m in apagar) == [1, 3]
+
+
+def test_sem_consolidado_no_canal_nao_escolhe_nada(servidor):
+    escolhida, apagar = servidor.escolher_consolidado([])
+
+    assert escolhida is None
+    assert apagar == []
+
+
+def test_reconciliacao_adota_o_id_e_o_horario_da_mensagem(servidor):
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    canal = CanalFalso([MensagemDatada(777, consolidado.CABECALHO, bot, _quando(5))], bot=bot)
+
+    asyncio.run(servidor.reconciliar_consolidado(canal, autor=UsuarioFalso(42)))
+
+    assert servidor.banco.obter_meta("consolidado_message_id") == "777"
+    assert servidor.banco.obter_meta("consolidado_ultimo_repost") == _quando(5).isoformat()
+
+
+def test_reconciliacao_apaga_os_consolidados_duplicados(servidor):
+    """Sem isso, cada restart do Render deixa um consolidado órfão no canal."""
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    velha = MensagemDatada(1, consolidado.CABECALHO, bot, _quando(0))
+    nova = MensagemDatada(2, consolidado.CABECALHO, bot, _quando(3))
+    canal = CanalFalso([nova, velha], bot=bot)
+
+    asyncio.run(servidor.reconciliar_consolidado(canal, autor=UsuarioFalso(42)))
+
+    assert velha.apagada is True
+    assert nova.apagada is False
+    assert servidor.banco.obter_meta("consolidado_message_id") == "2"
+
+
+def test_reconciliacao_de_obras_ignora_a_mensagem_de_consolidado(servidor):
+    """O cabeçalho não casa com _NOME_NA_MENSAGEM, então nenhuma obra fantasma
+    entra no banco a partir do consolidado."""
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    canal = CanalFalso([MensagemDatada(9, consolidado.CABECALHO, bot, _quando(0))], bot=bot)
+
+    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=UsuarioFalso(42)))
+
+    assert servidor.banco.listar() == []

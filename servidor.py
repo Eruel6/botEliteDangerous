@@ -16,6 +16,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 import armazenamento
+import consolidado
 import ed_parser
 
 load_dotenv()
@@ -95,6 +96,7 @@ async def on_ready():
     if canal is not None:
         try:
             await reconciliar_com_o_canal(canal, autor=client.user)
+            await reconciliar_consolidado(canal, autor=client.user)
         except Exception as e:
             print(f"Erro ao reconstruir estado do canal: {e}")
 
@@ -136,6 +138,49 @@ async def reconciliar_com_o_canal(canal, autor):
     if recuperadas:
         print(f"Estado reconstruído a partir do canal: {recuperadas} instalação(ões).")
     return recuperadas
+
+
+def e_mensagem_de_consolidado(conteudo):
+    return (conteudo or "").startswith(consolidado.CABECALHO)
+
+
+def escolher_consolidado(mensagens):
+    """A mais recente é adotada; as outras são lixo de restarts anteriores.
+
+    O disco do Render é efêmero, então o banco (e o id guardado) somem a cada
+    restart. Sem esta varredura, cada restart posta um consolidado novo e os
+    antigos ficam para sempre no canal.
+    """
+    if not mensagens:
+        return None, []
+    ordenadas = sorted(mensagens, key=lambda m: m.created_at, reverse=True)
+    return ordenadas[0], ordenadas[1:]
+
+
+async def reconciliar_consolidado(canal, autor):
+    """Reencontra a mensagem de consolidado depois de um restart."""
+    encontradas = []
+    async for mensagem in canal.history(limit=MENSAGENS_A_VARRER):
+        if mensagem.author.id != autor.id:
+            continue
+        if e_mensagem_de_consolidado(mensagem.content):
+            encontradas.append(mensagem)
+
+    escolhida, a_apagar = escolher_consolidado(encontradas)
+    for antiga in a_apagar:
+        try:
+            await antiga.delete()
+        except Exception as e:
+            print(f"Erro ao apagar consolidado duplicado: {e}")
+
+    if escolhida is None:
+        return None
+
+    banco.definir_meta("consolidado_message_id", escolhida.id)
+    # O created_at da adotada é o último repost. Sem isso, todo restart
+    # contaria como "faz mais de 12h" e dispararia um repost à toa.
+    banco.definir_meta("consolidado_ultimo_repost", escolhida.created_at.isoformat())
+    return escolhida
 
 
 def esta_pronta(instalacao):
