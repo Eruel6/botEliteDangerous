@@ -183,6 +183,41 @@ async def reconciliar_consolidado(canal, autor):
     return escolhida
 
 
+def retrato_atual(banco_alvo):
+    """Consolidado do que está aberto agora, direto do banco."""
+    return consolidado.consolidar(
+        [r.instalacao for r in banco_alvo.listar(pendentes=True)]
+    )
+
+
+async def atualizar_consolidado(canal, antes, depois, agora):
+    """Reposta, edita ou não faz nada, conforme decidir_acao."""
+    bruto = banco.obter_meta("consolidado_ultimo_repost")
+    ultimo_repost = datetime.datetime.fromisoformat(bruto) if bruto else None
+
+    acao = consolidado.decidir_acao(antes, depois, ultimo_repost, agora)
+    if acao == "nada":
+        return
+
+    texto = consolidado.formatar_consolidado(depois, agora)
+    guardado = banco.obter_meta("consolidado_message_id")
+    mensagem = await buscar_mensagem(canal, int(guardado)) if guardado else None
+
+    if acao == "editar" and mensagem is not None:
+        await mensagem.edit(content=texto)
+        return
+
+    if mensagem is not None:
+        try:
+            await mensagem.delete()
+        except Exception as e:
+            print(f"Erro ao apagar o consolidado anterior: {e}")
+
+    nova = await canal.send(texto)
+    banco.definir_meta("consolidado_message_id", nova.id)
+    banco.definir_meta("consolidado_ultimo_repost", agora.isoformat())
+
+
 def esta_pronta(instalacao):
     """Obra sem material nenhum não conta como pronta: all([]) é True."""
     return bool(instalacao.materiais) and all(m.completo for m in instalacao.materiais)
@@ -271,6 +306,8 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     if not deve_publicar(instalacao):
         return JSONResponse(content={"status": "ignorado"})
 
+    antes = retrato_atual(banco)
+
     porcentagem = f"{instalacao.porcentagem:.1f}%"
     agora = datetime.datetime.now(datetime.timezone.utc)
     rodape = f"atualizado por {quem} às {agora.strftime('%H:%M')} UTC"
@@ -292,6 +329,13 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     nova_msg = await canal.send(msg_formatada)
     banco.salvar(instalacao, message_id=nova_msg.id, reportado_por=quem)
     await adicionar_reacao_check(nova_msg, instalacao.materiais)
+
+    try:
+        await atualizar_consolidado(canal, antes, retrato_atual(banco), agora)
+    except Exception as e:
+        # O relato da obra já foi publicado; o consolidado é acessório e não
+        # pode derrubar a resposta ao cliente.
+        print(f"Erro ao atualizar o consolidado: {e}")
 
     return JSONResponse(content={"status": "ok"})
 

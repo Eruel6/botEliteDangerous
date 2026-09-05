@@ -635,3 +635,110 @@ def test_reconciliacao_de_obras_ignora_a_mensagem_de_consolidado(servidor):
     asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=UsuarioFalso(42)))
 
     assert servidor.banco.listar() == []
+
+
+# --- o consolidado a cada relato aceito --------------------------------------
+
+
+class CanalQueRegistra(CanalFalso):
+    """CanalFalso + send(), para ver o que o servidor postou."""
+
+    def __init__(self, mensagens=(), bot=None):
+        super().__init__(mensagens, bot=bot)
+        self.enviadas = []
+        self._proximo_id = 1000
+
+    async def send(self, conteudo):
+        self._proximo_id += 1
+        nova = MensagemDatada(self._proximo_id, conteudo, self.bot, _quando(9))
+        self.enviadas.append(nova)
+        self._mensagens.append(nova)
+        return nova
+
+
+def test_retrato_atual_ignora_as_obras_finalizadas(servidor):
+    servidor.banco.salvar(_obra_de_teste("Aberta", 100, 0, 1), message_id=1)
+    servidor.banco.salvar(_obra_de_teste("Pronta", 100, 100, 2), message_id=2)
+    servidor.banco.marcar_finalizado("Pronta")
+
+    retrato = servidor.retrato_atual(servidor.banco)
+
+    assert retrato.obras == frozenset({"Aberta"})
+    assert [l.material for l in retrato.linhas] == ["Steel"]
+
+
+def test_sem_mensagem_anterior_o_consolidado_e_postado(servidor):
+    import consolidado
+
+    canal = CanalQueRegistra(bot=UsuarioFalso(42))
+    antes = consolidado.consolidar([])
+    servidor.banco.salvar(_obra_de_teste("Aberta", 100, 0, 1), message_id=1)
+    depois = servidor.retrato_atual(servidor.banco)
+
+    asyncio.run(servidor.atualizar_consolidado(canal, antes, depois, _quando(9)))
+
+    assert len(canal.enviadas) == 1
+    assert consolidado.CABECALHO in canal.enviadas[0].content
+    assert servidor.banco.obter_meta("consolidado_message_id") == str(canal.enviadas[0].id)
+
+
+def test_progresso_comum_edita_a_mensagem_existente(servidor):
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    existente = MensagemDatada(500, consolidado.CABECALHO, bot, _quando(8))
+    canal = CanalQueRegistra([existente], bot=bot)
+    servidor.banco.definir_meta("consolidado_message_id", 500)
+    servidor.banco.definir_meta("consolidado_ultimo_repost", _quando(8).isoformat())
+
+    servidor.banco.salvar(_obra_de_teste("Aberta", 100, 0, 1), message_id=1)
+    antes = servidor.retrato_atual(servidor.banco)
+    servidor.banco.salvar(_obra_de_teste("Aberta", 100, 30, 1), message_id=1)
+    depois = servidor.retrato_atual(servidor.banco)
+
+    # uma hora depois: passou o cooldown de 30 min, não passou a janela de 12 h
+    asyncio.run(servidor.atualizar_consolidado(canal, antes, depois, _quando(9)))
+
+    assert canal.enviadas == []
+    assert existente.editada_para is not None
+    assert existente.apagada is False
+
+
+def test_obra_nova_apaga_a_anterior_e_reposta(servidor):
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    existente = MensagemDatada(500, consolidado.CABECALHO, bot, _quando(8))
+    canal = CanalQueRegistra([existente], bot=bot)
+    servidor.banco.definir_meta("consolidado_message_id", 500)
+    servidor.banco.definir_meta("consolidado_ultimo_repost", _quando(8).isoformat())
+
+    servidor.banco.salvar(_obra_de_teste("Aberta", 100, 0, 1), message_id=1)
+    antes = servidor.retrato_atual(servidor.banco)
+    servidor.banco.salvar(_obra_de_teste("Nova", 50, 0, 2), message_id=2)
+    depois = servidor.retrato_atual(servidor.banco)
+
+    asyncio.run(servidor.atualizar_consolidado(canal, antes, depois, _quando(9)))
+
+    assert existente.apagada is True
+    assert len(canal.enviadas) == 1
+    assert servidor.banco.obter_meta("consolidado_ultimo_repost") == _quando(9).isoformat()
+
+
+def test_nada_mudou_nao_toca_no_canal(servidor):
+    import consolidado
+
+    bot = UsuarioFalso(42)
+    existente = MensagemDatada(500, consolidado.CABECALHO, bot, _quando(8))
+    canal = CanalQueRegistra([existente], bot=bot)
+    servidor.banco.definir_meta("consolidado_message_id", 500)
+    servidor.banco.definir_meta("consolidado_ultimo_repost", _quando(8).isoformat())
+
+    servidor.banco.salvar(_obra_de_teste("Aberta", 100, 0, 1), message_id=1)
+    retrato = servidor.retrato_atual(servidor.banco)
+
+    asyncio.run(servidor.atualizar_consolidado(canal, retrato, retrato, _quando(9)))
+
+    assert canal.enviadas == []
+    assert existente.editada_para is None
+    assert existente.apagada is False
