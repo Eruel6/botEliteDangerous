@@ -1256,9 +1256,15 @@ A assinatura de `sincronizar` ganha o parâmetro novo:
 ```python
 def sincronizar(
     log_path, memoria, config, estado_cliente,
-    enviar=enviar_para_api, enviar_retrato=enviar_comandante,
+    enviar=enviar_para_api, enviar_retrato=None,
 ):
 ```
+
+**O padrão é `None`, não a função real.** Com a função real como padrão, todo
+teste que chama `sincronizar` sem se importar com o retrato passa a fazer
+requisição de rede de verdade. Quem manda de fato é o `rodar()`, passando
+`enviar_retrato=enviar_comandante`. É o mesmo padrão do `buscador=None` no plano
+do subsistema 3.
 
 E, ao fim da função, depois do laço das obras:
 

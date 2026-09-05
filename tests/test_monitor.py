@@ -210,3 +210,62 @@ def test_falha_de_rede_diz_o_motivo(monkeypatch):
 
     mensagem = e.como_dicionario()["erros"][0]["mensagem"]
     assert "tempo esgotado depois de 30s" in mensagem
+
+
+def test_a_url_do_comandante_sai_da_url_de_logdata():
+    """O config.txt de quem já usa aponta para /logdata; derivar evita mexer nele."""
+    assert (
+        monitor.url_do_comandante("https://exemplo.onrender.com/logdata")
+        == "https://exemplo.onrender.com/comandante"
+    )
+
+
+def test_o_payload_do_comandante_tem_carga_alvo_e_entregas():
+    import comandante
+
+    retrato = comandante.RetratoComandante(
+        carga={"Alumínio": 720},
+        alvo_market_id=901,
+        alvo_sistema="Sol",
+        entregas=[comandante.Entrega("2025-05-20T17:37:50Z", 901, "Alumínio", 720)],
+    )
+
+    payload = monitor.payload_do_comandante(retrato)
+
+    assert payload["carga"] == [{"material": "Alumínio", "quantidade": 720}]
+    assert payload["alvo"] == {"market_id": 901, "sistema": "Sol"}
+    assert payload["entregas"][0]["quando"] == "2025-05-20T17:37:50Z"
+
+
+def test_sincronizar_manda_o_retrato_uma_vez_por_ciclo():
+    enviados = []
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: enviados.append(r) or monitor.Resposta(200, ""),
+    )
+
+    assert len(enviados) == 1, "uma vez por ciclo, não uma por obra"
+
+
+def test_falha_no_retrato_nao_derruba_o_ciclo():
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(500, "explodiu"),
+    )
+
+    assert any("comandante" in erro["mensagem"] for erro in e.como_dicionario()["erros"])
+
+
+def test_por_padrao_sincronizar_nao_manda_retrato():
+    """Sem isso, todo teste que chama sincronizar faria requisição de rede."""
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(BASICO, {}, CONFIG, e, enviar=lambda p, c: monitor.Resposta(200, ""))
+
+    assert not any("comandante" in erro["mensagem"] for erro in e.como_dicionario()["erros"])
