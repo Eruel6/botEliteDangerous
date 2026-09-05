@@ -45,6 +45,28 @@
 <script>
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
 
+// Tudo entra como texto, nunca como HTML. A mensagem de erro carrega o corpo
+// da resposta do servidor, e o edge do Render devolve uma página inteira quando
+// está acordando o serviço hibernado — isso não pode virar markup aqui dentro.
+function preencher(tbody, vazio, colunas, linhas) {
+  tbody.replaceChildren();
+  if (!linhas.length) {
+    const td = tbody.insertRow().insertCell();
+    td.colSpan = colunas;
+    td.className = "vazio";
+    td.textContent = vazio;
+    return;
+  }
+  for (const celulas of linhas) {
+    const tr = tbody.insertRow();
+    for (const [texto, classe] of celulas) {
+      const td = tr.insertCell();
+      td.textContent = texto;
+      if (classe) td.className = classe;
+    }
+  }
+}
+
 function pintar(d) {
   const status = d.ultimo_status_http;
   const conexao = document.getElementById("conexao");
@@ -56,16 +78,11 @@ function pintar(d) {
   document.getElementById("leitura").textContent = hora(d.ultima_leitura);
   document.getElementById("journal").textContent = d.journal_atual || "nenhum encontrado";
 
-  const inst = document.getElementById("instalacoes");
-  inst.innerHTML = d.instalacoes.length
-    ? d.instalacoes.map(i => `<tr><td>${i.nome}</td><td>${i.porcentagem}%</td>` +
-        `<td>${i.materiais_faltando}</td><td>${i.total_faltando}</td></tr>`).join("")
-    : `<tr><td colspan="4" class="vazio">nenhuma obra no Journal atual</td></tr>`;
+  preencher(document.getElementById("instalacoes"), "nenhuma obra no Journal atual", 4,
+    d.instalacoes.map(i => [[i.nome], [i.porcentagem + "%"], [i.materiais_faltando], [i.total_faltando]]));
 
-  const erros = document.getElementById("erros");
-  erros.innerHTML = d.erros.length
-    ? d.erros.map(e => `<tr><td>${hora(e.quando)}</td><td class="erro">${e.mensagem}</td></tr>`).join("")
-    : `<tr><td colspan="2" class="vazio">nenhum erro</td></tr>`;
+  preencher(document.getElementById("erros"), "nenhum erro", 2,
+    d.erros.map(e => [[hora(e.quando)], [e.mensagem, "erro"]]));
 }
 
 async function atualizar() {
