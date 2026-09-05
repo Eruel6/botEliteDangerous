@@ -625,27 +625,23 @@ git commit -m "Decide entre repostar, editar e não fazer nada"
 
 - [ ] **Step 1: Escrever os testes que falham**
 
-Acrescentar ao fim de `tests/test_armazenamento.py`:
+Acrescentar ao fim de `tests/test_armazenamento.py`. **Atenção:** esse
+arquivo importa o módulo como `arm` e tem uma fixture `banco` (linha 14);
+usar `armazenamento.Armazenamento(...)` direto dá `NameError`.
 
 ```python
-def test_meta_devolve_o_padrao_quando_a_chave_nao_existe(tmp_path):
-    banco = armazenamento.Armazenamento(str(tmp_path / "estado.db"))
-
+def test_meta_devolve_o_padrao_quando_a_chave_nao_existe(banco):
     assert banco.obter_meta("consolidado_message_id") is None
     assert banco.obter_meta("consolidado_message_id", "vazio") == "vazio"
 
 
-def test_meta_guarda_e_devolve(tmp_path):
-    banco = armazenamento.Armazenamento(str(tmp_path / "estado.db"))
-
+def test_meta_guarda_e_devolve(banco):
     banco.definir_meta("consolidado_message_id", "12345")
 
     assert banco.obter_meta("consolidado_message_id") == "12345"
 
 
-def test_meta_sobrescreve_a_chave_existente(tmp_path):
-    banco = armazenamento.Armazenamento(str(tmp_path / "estado.db"))
-
+def test_meta_sobrescreve_a_chave_existente(banco):
     banco.definir_meta("consolidado_message_id", "12345")
     banco.definir_meta("consolidado_message_id", "67890")
 
@@ -654,9 +650,9 @@ def test_meta_sobrescreve_a_chave_existente(tmp_path):
 
 def test_meta_sobrevive_a_reabertura_do_banco(tmp_path):
     caminho = str(tmp_path / "estado.db")
-    armazenamento.Armazenamento(caminho).definir_meta("chave", "valor")
+    arm.Armazenamento(caminho).definir_meta("chave", "valor")
 
-    assert armazenamento.Armazenamento(caminho).obter_meta("chave") == "valor"
+    assert arm.Armazenamento(caminho).obter_meta("chave") == "valor"
 ```
 
 - [ ] **Step 2: Rodar e ver falhar**

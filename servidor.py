@@ -16,6 +16,7 @@ from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 import armazenamento
+import consolidado
 import ed_parser
 
 load_dotenv()
@@ -95,6 +96,7 @@ async def on_ready():
     if canal is not None:
         try:
             await reconciliar_com_o_canal(canal, autor=client.user)
+            await reconciliar_consolidado(canal, autor=client.user)
         except Exception as e:
             print(f"Erro ao reconstruir estado do canal: {e}")
 
@@ -138,6 +140,102 @@ async def reconciliar_com_o_canal(canal, autor):
     return recuperadas
 
 
+def e_mensagem_de_consolidado(conteudo):
+    return (conteudo or "").startswith(consolidado.CABECALHO)
+
+
+def escolher_consolidado(mensagens):
+    """A mais recente é adotada; as outras são lixo de restarts anteriores.
+
+    O disco do Render é efêmero, então o banco (e o id guardado) somem a cada
+    restart. Sem esta varredura, cada restart posta um consolidado novo e os
+    antigos ficam para sempre no canal.
+    """
+    if not mensagens:
+        return None, []
+    ordenadas = sorted(mensagens, key=lambda m: m.created_at, reverse=True)
+    return ordenadas[0], ordenadas[1:]
+
+
+async def reconciliar_consolidado(canal, autor):
+    """Reencontra a mensagem de consolidado depois de um restart."""
+    encontradas = []
+    async for mensagem in canal.history(limit=MENSAGENS_A_VARRER):
+        if mensagem.author.id != autor.id:
+            continue
+        if e_mensagem_de_consolidado(mensagem.content):
+            encontradas.append(mensagem)
+
+    escolhida, a_apagar = escolher_consolidado(encontradas)
+    for antiga in a_apagar:
+        try:
+            await antiga.delete()
+        except Exception as e:
+            print(f"Erro ao apagar consolidado duplicado: {e}")
+
+    if escolhida is None:
+        return None
+
+    banco.definir_meta("consolidado_message_id", escolhida.id)
+    # O created_at da adotada é o último repost. Sem isso, todo restart
+    # contaria como "faz mais de 12h" e dispararia um repost à toa.
+    banco.definir_meta("consolidado_ultimo_repost", escolhida.created_at.isoformat())
+    return escolhida
+
+
+def retrato_atual(banco_alvo):
+    """Consolidado do que está aberto agora, direto do banco."""
+    return consolidado.consolidar(
+        [r.instalacao for r in banco_alvo.listar(pendentes=True)]
+    )
+
+
+async def atualizar_consolidado(canal, antes, depois, agora):
+    """Reposta, edita ou não faz nada, conforme decidir_acao."""
+    bruto = banco.obter_meta("consolidado_ultimo_repost")
+    ultimo_repost = datetime.datetime.fromisoformat(bruto) if bruto else None
+
+    acao = consolidado.decidir_acao(antes, depois, ultimo_repost, agora)
+    if acao == "nada":
+        return
+
+    texto = consolidado.formatar_consolidado(depois, agora)
+    guardado = banco.obter_meta("consolidado_message_id")
+    mensagem = await buscar_mensagem(canal, int(guardado)) if guardado else None
+
+    if acao == "editar" and mensagem is not None:
+        await mensagem.edit(content=texto)
+        return
+
+    if mensagem is not None:
+        try:
+            await mensagem.delete()
+        except Exception as e:
+            print(f"Erro ao apagar o consolidado anterior: {e}")
+
+    nova = await canal.send(texto)
+    banco.definir_meta("consolidado_message_id", nova.id)
+    banco.definir_meta("consolidado_ultimo_repost", agora.isoformat())
+
+
+def esta_pronta(instalacao):
+    """Obra sem material nenhum não conta como pronta: all([]) é True."""
+    return bool(instalacao.materiais) and all(m.completo for m in instalacao.materiais)
+
+
+def finalizar_se_pronta(banco_alvo, registro):
+    """Marca finalizado só quando os materiais estão completos.
+
+    Antes isto era incondicional depois de TEMPO_FINALIZACAO_HORAS, e
+    'finalizado' acabava significando 'ninguém reportou nas últimas 2 horas'.
+    O consolidado depende de 'finalizado' querer dizer 'pronta'.
+    """
+    if not esta_pronta(registro.instalacao):
+        return False
+    banco_alvo.marcar_finalizado(registro.instalacao.nome)
+    return True
+
+
 async def verificar_finalizacoes():
     while True:
         agora = datetime.datetime.now(datetime.timezone.utc)
@@ -146,11 +244,13 @@ async def verificar_finalizacoes():
             horas = (agora - registro.ultima_atualizacao).total_seconds() / 3600
             if horas < TEMPO_FINALIZACAO_HORAS:
                 continue
+            if not esta_pronta(registro.instalacao):
+                continue
             try:
                 mensagem = await buscar_mensagem(canal, registro.message_id)
                 if mensagem is not None:
                     await adicionar_reacao_check(mensagem, registro.instalacao.materiais)
-                banco.marcar_finalizado(registro.instalacao.nome)
+                finalizar_se_pronta(banco, registro)
                 print(f"{CHECK} Finalizado automaticamente: {registro.instalacao.nome}")
             except Exception as e:
                 print(f"Erro ao finalizar {registro.instalacao.nome}: {e}")
@@ -206,6 +306,8 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     if not deve_publicar(instalacao):
         return JSONResponse(content={"status": "ignorado"})
 
+    antes = retrato_atual(banco)
+
     porcentagem = f"{instalacao.porcentagem:.1f}%"
     agora = datetime.datetime.now(datetime.timezone.utc)
     rodape = f"atualizado por {quem} às {agora.strftime('%H:%M')} UTC"
@@ -227,6 +329,13 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     nova_msg = await canal.send(msg_formatada)
     banco.salvar(instalacao, message_id=nova_msg.id, reportado_por=quem)
     await adicionar_reacao_check(nova_msg, instalacao.materiais)
+
+    try:
+        await atualizar_consolidado(canal, antes, retrato_atual(banco), agora)
+    except Exception as e:
+        # O relato da obra já foi publicado; o consolidado é acessório e não
+        # pode derrubar a resposta ao cliente.
+        print(f"Erro ao atualizar o consolidado: {e}")
 
     return JSONResponse(content={"status": "ok"})
 
