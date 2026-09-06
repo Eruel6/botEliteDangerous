@@ -28,13 +28,13 @@ class SugestaoMaterial:
     estacoes: list = field(default_factory=list)
     consultavel: bool = True
     desatualizado: bool = False
+    quando: datetime.datetime = None  # hora do dado mostrado; só importa se desatualizado
 
 
 @dataclass
 class _Entrada:
     estacoes: list
     quando: datetime.datetime
-    sistema: str
 
 
 class Buscador:
@@ -76,7 +76,7 @@ class Buscador:
                 )
                 continue
 
-            estacoes, desatualizado = self._buscar(
+            estacoes, desatualizado, quando = self._buscar(
                 ardent.nome_para_api(interno), sistema, agora, pad
             )
             resultado.append(
@@ -85,12 +85,18 @@ class Buscador:
                     faltando=faltas[nome],
                     estacoes=estacoes,
                     desatualizado=desatualizado,
+                    quando=quando,
                 )
             )
         return resultado
 
     def _buscar(self, material, sistema, agora, pad):
-        """(estações, desatualizado). Mantém o último resultado bom se a API falhar."""
+        """(estações, desatualizado, quando). Mantém o último resultado bom se a API falhar.
+
+        ``quando`` é a hora do dado devolvido — a do último sucesso quando o
+        resultado vem do cache ou de uma falha lembrada, None quando nunca
+        houve um sucesso para essa chave.
+        """
         chave = (material, sistema)
         entrada = self._cache.get(chave)
         limite = datetime.timedelta(minutes=VALIDADE_CACHE_MINUTOS)
@@ -109,7 +115,7 @@ class Buscador:
             del self._falhas[k]
 
         if entrada is not None and agora - entrada.quando < limite:
-            return ardent.melhores(entrada.estacoes, pad, agora), False
+            return ardent.melhores(entrada.estacoes, pad, agora), False, entrada.quando
 
         falha = self._falhas.get(chave)
         if falha is not None and agora - falha < limite_falha:
@@ -117,16 +123,16 @@ class Buscador:
             # isso, um sistema que o Ardent não conhece vira uma requisição a
             # cada ciclo, para sempre.
             if entrada is None:
-                return [], True
-            return ardent.melhores(entrada.estacoes, pad, agora), True
+                return [], True, None
+            return ardent.melhores(entrada.estacoes, pad, agora), True, entrada.quando
 
         cru = self._consultar(sistema, material, self._volume_minimo())
         if cru is None:
             self._falhas[chave] = agora
             if entrada is None:
-                return [], True
-            return ardent.melhores(entrada.estacoes, pad, agora), True
+                return [], True, None
+            return ardent.melhores(entrada.estacoes, pad, agora), True, entrada.quando
 
         self._falhas.pop(chave, None)
-        self._cache[chave] = _Entrada(estacoes=cru, quando=agora, sistema=sistema)
-        return ardent.melhores(cru, pad, agora), False
+        self._cache[chave] = _Entrada(estacoes=cru, quando=agora)
+        return ardent.melhores(cru, pad, agora), False, agora

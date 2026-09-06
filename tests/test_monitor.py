@@ -327,6 +327,25 @@ def test_o_ciclo_busca_pelo_sistema_do_piloto_nao_pela_obra():
     assert buscador.sistemas_recebidos == ["Outro Sistema"]
 
 
+def test_sugestao_para_dicionario_serializa_a_hora_do_dado():
+    import datetime
+
+    import compras
+
+    quando = datetime.datetime(2026, 9, 5, 14, 32, tzinfo=datetime.timezone.utc)
+    sugestao = compras.SugestaoMaterial(material="Alumínio", faltando=500, desatualizado=True, quando=quando)
+
+    assert monitor.sugestao_para_dicionario(sugestao)["quando"] == "2026-09-05T14:32:00+00:00"
+
+
+def test_sugestao_para_dicionario_sem_hora_vira_none():
+    import compras
+
+    sugestao = compras.SugestaoMaterial(material="Alumínio", faltando=500, consultavel=False)
+
+    assert monitor.sugestao_para_dicionario(sugestao)["quando"] is None
+
+
 def test_sem_buscador_o_ciclo_nao_quebra():
     e = estado.EstadoCliente()
 

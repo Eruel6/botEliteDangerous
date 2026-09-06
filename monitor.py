@@ -126,6 +126,7 @@ def sugestao_para_dicionario(sugestao):
         "faltando": sugestao.faltando,
         "consultavel": sugestao.consultavel,
         "desatualizado": sugestao.desatualizado,
+        "quando": sugestao.quando.isoformat() if sugestao.quando else None,
         "estacoes": [
             {
                 "nome": e.nome,

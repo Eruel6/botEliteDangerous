@@ -143,6 +143,37 @@ def test_falha_de_rede_mantem_o_ultimo_resultado_bom():
     assert depois[0].desatualizado is True
 
 
+def test_sugestao_fresca_carrega_a_hora_da_consulta():
+    consulta = ConsultaFalsa()
+    (sugestao,) = compras.Buscador("type9", 720, consultar=consulta).sugestoes(
+        [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])], "Sol", AGORA
+    )
+
+    assert sugestao.quando == AGORA
+
+
+def test_sugestao_desatualizada_carrega_a_hora_do_ultimo_dado_bom():
+    consulta = ConsultaFalsa()
+    buscador = compras.Buscador("type9", 720, consultar=consulta)
+    obras = [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])]
+    buscador.sugestoes(obras, "Sol", AGORA)
+
+    consulta.resultado = None  # a API sumiu
+    depois = buscador.sugestoes(obras, "Sol", AGORA + datetime.timedelta(minutes=16))
+
+    assert depois[0].quando == AGORA
+
+
+def test_sugestao_sem_nenhum_dado_bom_nao_carrega_hora():
+    consulta = ConsultaFalsa()
+    consulta.resultado = None  # nunca respondeu
+    (sugestao,) = compras.Buscador("type9", 720, consultar=consulta).sugestoes(
+        [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])], "Sol", AGORA
+    )
+
+    assert sugestao.quando is None
+
+
 def test_lista_vazia_nao_e_falha():
     consulta = ConsultaFalsa(resultado=[])
     buscador = compras.Buscador("type9", 720, consultar=consulta)

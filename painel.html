@@ -47,6 +47,10 @@
 
 <script>
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
+// Só hora e minuto: o painel diz "dados de 14:32", não "dados de 14:32:07".
+const horaCurta = (iso) => iso
+  ? new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+  : null;
 
 // Tudo entra como texto, nunca como HTML. A mensagem de erro carrega o corpo
 // da resposta do servidor, e o edge do Render devolve uma página inteira quando
@@ -101,7 +105,10 @@ function pintar(d) {
 
     const titulo = document.createElement("div");
     titulo.textContent = `${s.material} — falta ${s.faltando}`;
-    if (s.desatualizado) titulo.textContent += " (dados antigos)";
+    if (s.desatualizado) {
+      const quando = horaCurta(s.quando);
+      titulo.textContent += quando ? ` (dados de ${quando})` : " (dados antigos)";
+    }
     bloco.appendChild(titulo);
 
     if (!s.consultavel) {

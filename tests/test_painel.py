@@ -375,3 +375,43 @@ function coletarDados(elem, depth = 0) {
 
     assert "não consegui consultar agora" in result.stdout, f"Teste 4 - mensagem API falha não encontrada: {result.stdout}"
     assert "nada dentro de 50 ly" not in result.stdout, f"Teste 4 - mensagem errada quando API falhou: {result.stdout}"
+    # Sem "quando" (payload antigo, ou nunca houve sucesso): cai no rótulo genérico.
+    assert "dados antigos" in result.stdout, f"Teste 4 - rótulo genérico ausente: {result.stdout}"
+
+    # Teste 5: desatualizado = true e com a hora do último dado bom
+    teste5_dados = {
+        "ultimo_status_http": 200,
+        "ultimo_envio_ok": None,
+        "ultima_leitura": None,
+        "journal_atual": None,
+        "instalacoes": [],
+        "erros": [],
+        "compras": [
+            {
+                "material": "Paládio",
+                "faltando": "40 t",
+                "consultavel": True,
+                "desatualizado": True,
+                "quando": "2026-09-05T14:32:00Z",
+                "estacoes": []
+            }
+        ]
+    }
+
+    script_teste5 = dom_setup + "\n" + script + "\n" + "pintar(" + json.dumps(teste5_dados) + ");\n" + \
+        "const resultado5 = coletarDados(elements['compras']);\n" + \
+        "console.log(resultado5.join('|'));\n"
+
+    result = subprocess.run(
+        [node_bin],
+        input=script_teste5,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        env={**os.environ, "TZ": "UTC"},
+    )
+
+    if result.returncode != 0:
+        pytest.fail(f"Erro teste 5: {result.stderr}")
+
+    assert "dados de 14:32" in result.stdout, f"Teste 5 - hora do dado antigo ausente: {result.stdout}"
