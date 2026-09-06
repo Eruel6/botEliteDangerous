@@ -269,3 +269,71 @@ def test_por_padrao_sincronizar_nao_manda_retrato():
     monitor.sincronizar(BASICO, {}, CONFIG, e, enviar=lambda p, c: monitor.Resposta(200, ""))
 
     assert not any("comandante" in erro["mensagem"] for erro in e.como_dicionario()["erros"])
+
+
+def test_o_ciclo_grava_as_compras_no_estado():
+    import ardent
+    import compras
+
+    estacao = ardent.Estacao(
+        nome="Nagasaki", sistema="Sol", distancia_ly=10, distancia_ls=100,
+        estoque=9999, preco=127, pad=3, carrier=False, atualizado_em="2026-09-01T00:00:00Z",
+    )
+
+    class BuscadorFalso:
+        def sugestoes(self, obras, sistema, agora):
+            return [compras.SugestaoMaterial(material="Alumínio", faltando=500,
+                                             estacoes=[estacao])]
+
+    e = estado.EstadoCliente()
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=BuscadorFalso(),
+    )
+
+    (sugestao,) = e.como_dicionario()["compras"]
+    assert sugestao["material"] == "Alumínio"
+    assert sugestao["estacoes"][0]["nome"] == "Nagasaki"
+    assert sugestao["estacoes"][0]["carrier"] is False
+
+
+def test_sem_buscador_o_ciclo_nao_quebra():
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=None,
+    )
+
+    assert e.como_dicionario()["compras"] == []
+
+
+def test_trocar_de_nave_atualiza_o_buscador():
+    """Sair de uma nave pequena para o Type-9 muda o pad exigido e o porão."""
+    import compras
+
+    buscador = compras.Buscador("sidewinder", 4)
+    buscador.nave, buscador.capacidade = "type9", 720
+
+    assert buscador._volume_minimo() == 180
+
+
+def test_falha_no_buscador_nao_derruba_o_ciclo():
+    class BuscadorQueExplode:
+        def sugestoes(self, obras, sistema, agora):
+            raise RuntimeError("a API sumiu")
+
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=BuscadorQueExplode(),
+    )
+
+    assert any("compra" in erro["mensagem"] for erro in e.como_dicionario()["erros"])

@@ -1,12 +1,14 @@
 """O loop do cliente: lê o Journal e envia as instalações que mudaram."""
 
 import collections
+import datetime
 import json
 import time
 
 import requests
 
 import comandante
+import compras
 import ed_parser
 
 INTERVALO_CHECAGEM = 60
@@ -118,9 +120,30 @@ def enviar_comandante(retrato, config):
         return Resposta(None, _resumir(f"{type(e).__name__}: {e}"))
 
 
+def sugestao_para_dicionario(sugestao):
+    return {
+        "material": sugestao.material,
+        "faltando": sugestao.faltando,
+        "consultavel": sugestao.consultavel,
+        "desatualizado": sugestao.desatualizado,
+        "estacoes": [
+            {
+                "nome": e.nome,
+                "sistema": e.sistema,
+                "distancia_ly": e.distancia_ly,
+                "distancia_ls": e.distancia_ls,
+                "estoque": e.estoque,
+                "preco": e.preco,
+                "carrier": e.carrier,
+            }
+            for e in sugestao.estacoes
+        ],
+    }
+
+
 def sincronizar(
     log_path, memoria, config, estado_cliente,
-    enviar=enviar_para_api, enviar_retrato=None,
+    enviar=enviar_para_api, enviar_retrato=None, buscador=None,
 ):
     """Envia cada instalação cujo estado mudou e ainda não foi aceita.
 
@@ -167,16 +190,40 @@ def sincronizar(
                 _com_detalhe(f"comandante: envio recusado ({resposta.status})", resposta.detalhe)
             )
 
+    if buscador is not None:
+        try:
+            _, sistema = comandante.alvo_atual(log_path)
+            agora = datetime.datetime.now(datetime.timezone.utc)
+            estado_cliente.registrar_compras(
+                [sugestao_para_dicionario(s)
+                 for s in buscador.sugestoes(instalacoes, sistema, agora)]
+            )
+        except Exception as e:
+            # A consulta é acessória: o relato das obras não pode parar por causa
+            # de uma API de terceiro.
+            estado_cliente.registrar_erro(f"compras: {e}")
+
 
 def rodar(config, estado_cliente, intervalo=INTERVALO_CHECAGEM):
     memoria = {}
+    buscador = None
     while True:
         log_path = ed_parser.encontrar_log_mais_recente()
         if log_path:
+            nave, capacidade = ed_parser.nave_atual(log_path)
+            if capacidade:
+                if buscador is None:
+                    buscador = compras.Buscador(nave, capacidade)
+                else:
+                    # Trocar de nave no meio da sessão muda o pad exigido e o
+                    # porão. O cache continua válido: ele guarda a resposta da
+                    # API, e os filtros são aplicados na leitura.
+                    buscador.nave = nave
+                    buscador.capacidade = capacidade
             try:
                 sincronizar(
                     log_path, memoria, config, estado_cliente,
-                    enviar_retrato=enviar_comandante,
+                    enviar_retrato=enviar_comandante, buscador=buscador,
                 )
             except Exception as e:
                 estado_cliente.registrar_erro(f"erro ao processar o log: {e}")
