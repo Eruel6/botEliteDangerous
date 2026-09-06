@@ -299,6 +299,34 @@ def test_o_ciclo_grava_as_compras_no_estado():
     assert sugestao["estacoes"][0]["carrier"] is False
 
 
+def test_o_ciclo_busca_pelo_sistema_do_piloto_nao_pela_obra():
+    """journal_com_sistema.log: obra vista em A, piloto pula para B depois.
+
+    A consulta de compras tem que seguir o piloto (B), não ficar presa no
+    sistema da obra (A) como ``comandante.alvo_atual`` fica de propósito.
+    """
+    COM_SISTEMA = os.path.join(FIXTURES, "journal_com_sistema.log")
+
+    class BuscadorEspiao:
+        def __init__(self):
+            self.sistemas_recebidos = []
+
+        def sugestoes(self, obras, sistema, agora):
+            self.sistemas_recebidos.append(sistema)
+            return []
+
+    buscador = BuscadorEspiao()
+    e = estado.EstadoCliente()
+    monitor.sincronizar(
+        COM_SISTEMA, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=buscador,
+    )
+
+    assert buscador.sistemas_recebidos == ["Outro Sistema"]
+
+
 def test_sem_buscador_o_ciclo_nao_quebra():
     e = estado.EstadoCliente()
 

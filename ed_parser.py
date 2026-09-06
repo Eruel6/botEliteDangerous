@@ -104,6 +104,22 @@ def registros(caminho_log):
                 continue
 
 
+def sistema_atual(caminho_log):
+    """Sistema do registro mais recente do log que carrega um ``StarSystem``.
+
+    "" se nenhum registro carregar um. Espelha o rastreamento de
+    ``sistema_corrente`` feito dentro de ``extrair_instalacoes``: aqui o
+    interesse é onde o piloto está agora, não o sistema de nenhuma obra —
+    ``comandante.alvo_atual`` já cobre esse outro caso, e é sticky de
+    propósito porque serve a um problema diferente.
+    """
+    sistema = ""
+    for registro in registros(caminho_log):
+        if isinstance(registro, dict) and registro.get("StarSystem"):
+            sistema = registro["StarSystem"]
+    return sistema
+
+
 def extrair_instalacoes(caminho_log):
     """Devolve uma ``Instalacao`` por MarketID, com o estado mais recente do log."""
     por_market = {}

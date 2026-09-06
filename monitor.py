@@ -192,7 +192,10 @@ def sincronizar(
 
     if buscador is not None:
         try:
-            _, sistema = comandante.alvo_atual(log_path)
+            # sistema_atual, não alvo_atual: a consulta é "perto de mim, agora",
+            # e alvo_atual é sticky no sistema da última obra vista — serve ao
+            # subsistema do comandante, não a este.
+            sistema = ed_parser.sistema_atual(log_path)
             agora = datetime.datetime.now(datetime.timezone.utc)
             estado_cliente.registrar_compras(
                 [sugestao_para_dicionario(s)
