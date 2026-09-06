@@ -75,3 +75,28 @@ def test_escolhe_outra_porta_quando_a_pedida_esta_ocupada():
             segundo.shutdown()
     finally:
         primeiro.shutdown()
+
+
+def test_a_pagina_tem_a_secao_de_compras():
+    with open(os.path.join(RAIZ, "painel.html"), encoding="utf-8") as f:
+        html = f.read()
+
+    assert 'id="compras"' in html
+    assert "Onde comprar" in html
+
+
+def test_a_secao_distingue_falha_de_consulta_de_ausencia_de_resultado():
+    """Sem estações porque a API caiu não é o mesmo que sem estações por perto."""
+    with open(os.path.join(RAIZ, "painel.html"), encoding="utf-8") as f:
+        html = f.read()
+
+    assert "não consegui consultar agora" in html
+    assert "nada dentro de 50 ly" in html
+
+
+def test_a_secao_de_compras_usa_textcontent():
+    """O nome da estação vem de uma API de terceiro; não pode virar markup."""
+    with open(os.path.join(RAIZ, "painel.html"), encoding="utf-8") as f:
+        html = f.read()
+
+    assert "innerHTML" not in html
