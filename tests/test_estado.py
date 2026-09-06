@@ -88,3 +88,18 @@ def test_o_dicionario_e_serializavel_em_json():
     e.registrar_erro("algo quebrou")
 
     json.dumps(e.como_dicionario())
+
+
+def test_as_compras_entram_no_dicionario():
+    e = estado.EstadoCliente()
+
+    e.registrar_compras([
+        {"material": "Alumínio", "faltando": 500, "consultavel": True,
+         "desatualizado": False, "estacoes": []}
+    ])
+
+    assert e.como_dicionario()["compras"][0]["material"] == "Alumínio"
+
+
+def test_sem_compras_o_dicionario_traz_lista_vazia():
+    assert estado.EstadoCliente().como_dicionario()["compras"] == []

@@ -28,6 +28,7 @@ class EstadoCliente:
         self._ultimo_status_http = None
         self._instalacoes = []
         self._erros = []
+        self._compras = []
         self._inicio = _agora()
 
     def registrar_leitura(self, journal, instalacoes):
@@ -55,6 +56,11 @@ class EstadoCliente:
             self._erros.insert(0, {"quando": _iso(_agora()), "mensagem": str(mensagem)})
             del self._erros[self._max_erros :]
 
+    def registrar_compras(self, sugestoes):
+        """Sugestões de compra já prontas para o painel, como dicionários."""
+        with self._lock:
+            self._compras = list(sugestoes)
+
     def como_dicionario(self):
         with self._lock:
             return {
@@ -64,5 +70,6 @@ class EstadoCliente:
                 "ultimo_status_http": self._ultimo_status_http,
                 "instalacoes": list(self._instalacoes),
                 "erros": list(self._erros),
+                "compras": list(self._compras),
                 "desde": _iso(self._inicio),
             }

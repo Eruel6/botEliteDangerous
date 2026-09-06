@@ -287,6 +287,21 @@ def materiais_na_mensagem(conteudo):
     return materiais
 
 
+def nave_atual(caminho_log):
+    """(nave, capacidade de carga) do último Loadout. ("", 0) se não houver.
+
+    O Loadout é reescrito a cada troca de nave ou de módulo, então o último do
+    log é o que vale.
+    """
+    nave = ""
+    capacidade = 0
+    for registro in registros(caminho_log):
+        if isinstance(registro, dict) and registro.get("event") == "Loadout":
+            nave = registro.get("Ship", "") or ""
+            capacidade = registro.get("CargoCapacity", 0) or 0
+    return nave, capacidade
+
+
 def formatar_tabela_terminal(instalacao):
     """Tabela de largura dinâmica para stdout, como a do parserMaterials original."""
     cabecalho = ("Material", "Requisitado", "Fornecido", "Faltando")

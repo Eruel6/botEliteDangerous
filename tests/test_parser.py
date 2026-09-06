@@ -315,3 +315,14 @@ def test_mensagem_sem_credito_relida_devolve_vazio():
     )
 
     assert ed.creditos_na_mensagem(ed.formatar_mensagem_discord(inst)) == {}
+
+
+COM_LOADOUT = os.path.join(FIXTURES, "journal_com_loadout.log")
+
+
+def test_a_nave_e_a_capacidade_vem_do_loadout():
+    assert ed.nave_atual(COM_LOADOUT) == ("type9", 720)
+
+
+def test_log_sem_loadout_devolve_nave_vazia():
+    assert ed.nave_atual(os.path.join(FIXTURES, "journal_sem_depot.log")) == ("", 0)
