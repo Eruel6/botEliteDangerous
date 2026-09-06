@@ -87,6 +87,14 @@ class Buscador:
         entrada = self._cache.get(chave)
         limite = datetime.timedelta(minutes=VALIDADE_CACHE_MINUTOS)
 
+        # Entradas expiradas de OUTRAS chaves são descartadas: o valor armazenado é a
+        # lista bruta da API, que é grande (~235 KB por material/sistema), então deixar
+        # lingar para sempre consumiria muita memória no cliente.
+        expiradas = [k for k, e in self._cache.items()
+                     if k != chave and agora - e.quando >= limite]
+        for k in expiradas:
+            del self._cache[k]
+
         if entrada is not None and agora - entrada.quando < limite:
             return ardent.melhores(entrada.estacoes, pad, agora), False
 

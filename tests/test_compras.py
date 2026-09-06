@@ -164,3 +164,27 @@ def test_sem_sistema_corrente_nao_consulta_nada():
 
     assert consulta.chamadas == []
     assert sugestoes == []
+
+
+def test_entrada_expirada_e_removida_do_cache():
+    """Entrada expirada é descartada, não acumulada no cache."""
+    consulta = ConsultaFalsa()
+    buscador = compras.Buscador("type9", 720, consultar=consulta)
+    obras = [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])]
+
+    buscador.sugestoes(obras, "Sol", AGORA)
+    buscador.sugestoes(obras, "Sol", AGORA + datetime.timedelta(minutes=16))
+
+    assert len(buscador._cache) == 1
+
+
+def test_entrada_expirada_em_sistema_diferente_nao_fica_residente():
+    """Entrada expirada não é mantida quando outro sistema é consultado."""
+    consulta = ConsultaFalsa()
+    buscador = compras.Buscador("type9", 720, consultar=consulta)
+    obras = [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])]
+
+    buscador.sugestoes(obras, "Sol", AGORA)
+    buscador.sugestoes(obras, "Outro", AGORA + datetime.timedelta(minutes=16))
+
+    assert len(buscador._cache) == 1
