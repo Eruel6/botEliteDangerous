@@ -13,6 +13,13 @@ import ardent
 VALIDADE_CACHE_MINUTOS = 15
 FRACAO_MINIMA_DO_PORAO = 0.25
 
+# Uma consulta que falhou (rede, timeout, 404, JSON estranho) fica "lembrada"
+# por esse tempo, sem reconsultar. Sem isso, um sistema que o Ardent não
+# conhece — ou uma API só lenta, não fora do ar — vira reconsulta a cada
+# ciclo de 60 s, para sempre: com uma dúzia de materiais faltando e 30 s de
+# timeout cada, um sincronizar() inteiro passa a levar minutos.
+VALIDADE_FALHA_MINUTOS = 5
+
 
 @dataclass
 class SugestaoMaterial:
@@ -38,6 +45,7 @@ class Buscador:
         self.capacidade = capacidade
         self._consultar = consultar
         self._cache = {}
+        self._falhas = {}
 
     def _volume_minimo(self):
         return int(self.capacidade * FRACAO_MINIMA_DO_PORAO)
@@ -86,6 +94,7 @@ class Buscador:
         chave = (material, sistema)
         entrada = self._cache.get(chave)
         limite = datetime.timedelta(minutes=VALIDADE_CACHE_MINUTOS)
+        limite_falha = datetime.timedelta(minutes=VALIDADE_FALHA_MINUTOS)
 
         # Entradas expiradas de OUTRAS chaves são descartadas: o valor armazenado é a
         # lista bruta da API, que é grande (~235 KB por material/sistema), então deixar
@@ -94,15 +103,30 @@ class Buscador:
                      if k != chave and agora - e.quando >= limite]
         for k in expiradas:
             del self._cache[k]
+        falhas_expiradas = [k for k, quando in self._falhas.items()
+                            if k != chave and agora - quando >= limite_falha]
+        for k in falhas_expiradas:
+            del self._falhas[k]
 
         if entrada is not None and agora - entrada.quando < limite:
             return ardent.melhores(entrada.estacoes, pad, agora), False
 
-        cru = self._consultar(sistema, material, self._volume_minimo())
-        if cru is None:
+        falha = self._falhas.get(chave)
+        if falha is not None and agora - falha < limite_falha:
+            # Falha recente e ainda dentro da janela: não reconsulta. Sem
+            # isso, um sistema que o Ardent não conhece vira uma requisição a
+            # cada ciclo, para sempre.
             if entrada is None:
                 return [], True
             return ardent.melhores(entrada.estacoes, pad, agora), True
 
+        cru = self._consultar(sistema, material, self._volume_minimo())
+        if cru is None:
+            self._falhas[chave] = agora
+            if entrada is None:
+                return [], True
+            return ardent.melhores(entrada.estacoes, pad, agora), True
+
+        self._falhas.pop(chave, None)
         self._cache[chave] = _Entrada(estacoes=cru, quando=agora, sistema=sistema)
         return ardent.melhores(cru, pad, agora), False

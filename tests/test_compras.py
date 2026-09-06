@@ -166,6 +166,48 @@ def test_sem_sistema_corrente_nao_consulta_nada():
     assert sugestoes == []
 
 
+def test_falha_lembrada_nao_reconsulta_no_ciclo_seguinte():
+    """Uma falha (404, timeout, JSON estranho) não pode virar reconsulta a cada ciclo."""
+    consulta = ConsultaFalsa()
+    consulta.resultado = None  # a API não sabe responder
+    buscador = compras.Buscador("type9", 720, consultar=consulta)
+    obras = [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])]
+
+    buscador.sugestoes(obras, "Sol", AGORA)
+    buscador.sugestoes(obras, "Sol", AGORA + datetime.timedelta(minutes=1))
+
+    assert len(consulta.chamadas) == 1
+
+
+def test_falha_lembrada_reconsulta_apos_a_janela_expirar():
+    consulta = ConsultaFalsa()
+    consulta.resultado = None  # a API não sabe responder
+    buscador = compras.Buscador("type9", 720, consultar=consulta)
+    obras = [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])]
+
+    buscador.sugestoes(obras, "Sol", AGORA)
+    buscador.sugestoes(obras, "Sol", AGORA + datetime.timedelta(minutes=6))
+
+    assert len(consulta.chamadas) == 2
+
+
+def test_falha_lembrada_ainda_serve_o_ultimo_resultado_bom():
+    consulta = ConsultaFalsa()
+    buscador = compras.Buscador("type9", 720, consultar=consulta)
+    obras = [_obra("A", [("Alumínio", "$Aluminium_name;", 500)])]
+    buscador.sugestoes(obras, "Sol", AGORA)
+
+    consulta.resultado = None  # a API sumiu
+    depois_16 = buscador.sugestoes(obras, "Sol", AGORA + datetime.timedelta(minutes=16))
+    depois_17 = buscador.sugestoes(obras, "Sol", AGORA + datetime.timedelta(minutes=17))
+
+    assert [e.nome for e in depois_16[0].estacoes] == ["Estacao"]
+    assert [e.nome for e in depois_17[0].estacoes] == ["Estacao"]
+    assert depois_17[0].desatualizado is True
+    # Uma consulta boa (t=0) e uma que falhou (t=16); t=17 não reconsultou.
+    assert len(consulta.chamadas) == 2
+
+
 def test_entrada_expirada_e_removida_do_cache():
     """Entrada expirada é descartada, não acumulada no cache."""
     consulta = ConsultaFalsa()
