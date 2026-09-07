@@ -104,6 +104,22 @@ def registros(caminho_log):
                 continue
 
 
+def sistema_atual(caminho_log):
+    """Sistema do registro mais recente do log que carrega um ``StarSystem``.
+
+    "" se nenhum registro carregar um. Espelha o rastreamento de
+    ``sistema_corrente`` feito dentro de ``extrair_instalacoes``: aqui o
+    interesse é onde o piloto está agora, não o sistema de nenhuma obra —
+    ``comandante.alvo_atual`` já cobre esse outro caso, e é sticky de
+    propósito porque serve a um problema diferente.
+    """
+    sistema = ""
+    for registro in registros(caminho_log):
+        if isinstance(registro, dict) and registro.get("StarSystem"):
+            sistema = registro["StarSystem"]
+    return sistema
+
+
 def extrair_instalacoes(caminho_log):
     """Devolve uma ``Instalacao`` por MarketID, com o estado mais recente do log."""
     por_market = {}
@@ -285,6 +301,21 @@ def materiais_na_mensagem(conteudo):
             )
         )
     return materiais
+
+
+def nave_atual(caminho_log):
+    """(nave, capacidade de carga) do último Loadout. ("", 0) se não houver.
+
+    O Loadout é reescrito a cada troca de nave ou de módulo, então o último do
+    log é o que vale.
+    """
+    nave = ""
+    capacidade = 0
+    for registro in registros(caminho_log):
+        if isinstance(registro, dict) and registro.get("event") == "Loadout":
+            nave = registro.get("Ship", "") or ""
+            capacidade = registro.get("CargoCapacity", 0) or 0
+    return nave, capacidade
 
 
 def formatar_tabela_terminal(instalacao):

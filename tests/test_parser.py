@@ -267,6 +267,24 @@ def test_instalacao_de_payload_sem_sistema_fica_vazia():
     assert inst.sistema == ""
 
 
+def test_sistema_atual_e_o_ultimo_starsystem_do_log():
+    assert ed.sistema_atual(COM_SISTEMA) == "Outro Sistema"
+
+
+def test_sistema_atual_segue_o_piloto_e_nao_a_obra():
+    """O piloto saiu do sistema da obra; sistema_atual segue o piloto, alvo_atual não."""
+    import comandante
+
+    _, sistema_da_obra = comandante.alvo_atual(COM_SISTEMA)
+
+    assert sistema_da_obra == "Wregoe KP-E c25-11"
+    assert ed.sistema_atual(COM_SISTEMA) == "Outro Sistema"
+
+
+def test_sistema_atual_vazio_sem_starsystem_no_log():
+    assert ed.sistema_atual(os.path.join(FIXTURES, "journal_sem_depot.log")) == ""
+
+
 def test_credito_ordena_do_maior_para_o_menor():
     assert ed.formatar_creditos({"btpopov": 720, "Eruel": 1440}) == (
         "entregue: Eruel 1440t · btpopov 720t"
@@ -315,3 +333,14 @@ def test_mensagem_sem_credito_relida_devolve_vazio():
     )
 
     assert ed.creditos_na_mensagem(ed.formatar_mensagem_discord(inst)) == {}
+
+
+COM_LOADOUT = os.path.join(FIXTURES, "journal_com_loadout.log")
+
+
+def test_a_nave_e_a_capacidade_vem_do_loadout():
+    assert ed.nave_atual(COM_LOADOUT) == ("type9", 720)
+
+
+def test_log_sem_loadout_devolve_nave_vazia():
+    assert ed.nave_atual(os.path.join(FIXTURES, "journal_sem_depot.log")) == ("", 0)

@@ -269,3 +269,118 @@ def test_por_padrao_sincronizar_nao_manda_retrato():
     monitor.sincronizar(BASICO, {}, CONFIG, e, enviar=lambda p, c: monitor.Resposta(200, ""))
 
     assert not any("comandante" in erro["mensagem"] for erro in e.como_dicionario()["erros"])
+
+
+def test_o_ciclo_grava_as_compras_no_estado():
+    import ardent
+    import compras
+
+    estacao = ardent.Estacao(
+        nome="Nagasaki", sistema="Sol", distancia_ly=10, distancia_ls=100,
+        estoque=9999, preco=127, pad=3, carrier=False, atualizado_em="2026-09-01T00:00:00Z",
+    )
+
+    class BuscadorFalso:
+        def sugestoes(self, obras, sistema, agora):
+            return [compras.SugestaoMaterial(material="Alumínio", faltando=500,
+                                             estacoes=[estacao])]
+
+    e = estado.EstadoCliente()
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=BuscadorFalso(),
+    )
+
+    (sugestao,) = e.como_dicionario()["compras"]
+    assert sugestao["material"] == "Alumínio"
+    assert sugestao["estacoes"][0]["nome"] == "Nagasaki"
+    assert sugestao["estacoes"][0]["carrier"] is False
+
+
+def test_o_ciclo_busca_pelo_sistema_do_piloto_nao_pela_obra():
+    """journal_com_sistema.log: obra vista em A, piloto pula para B depois.
+
+    A consulta de compras tem que seguir o piloto (B), não ficar presa no
+    sistema da obra (A) como ``comandante.alvo_atual`` fica de propósito.
+    """
+    COM_SISTEMA = os.path.join(FIXTURES, "journal_com_sistema.log")
+
+    class BuscadorEspiao:
+        def __init__(self):
+            self.sistemas_recebidos = []
+
+        def sugestoes(self, obras, sistema, agora):
+            self.sistemas_recebidos.append(sistema)
+            return []
+
+    buscador = BuscadorEspiao()
+    e = estado.EstadoCliente()
+    monitor.sincronizar(
+        COM_SISTEMA, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=buscador,
+    )
+
+    assert buscador.sistemas_recebidos == ["Outro Sistema"]
+
+
+def test_sugestao_para_dicionario_serializa_a_hora_do_dado():
+    import datetime
+
+    import compras
+
+    quando = datetime.datetime(2026, 9, 5, 14, 32, tzinfo=datetime.timezone.utc)
+    sugestao = compras.SugestaoMaterial(material="Alumínio", faltando=500, desatualizado=True, quando=quando)
+
+    assert monitor.sugestao_para_dicionario(sugestao)["quando"] == "2026-09-05T14:32:00+00:00"
+
+
+def test_sugestao_para_dicionario_sem_hora_vira_none():
+    import compras
+
+    sugestao = compras.SugestaoMaterial(material="Alumínio", faltando=500, consultavel=False)
+
+    assert monitor.sugestao_para_dicionario(sugestao)["quando"] is None
+
+
+def test_sem_buscador_o_ciclo_nao_quebra():
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=None,
+    )
+
+    assert e.como_dicionario()["compras"] == []
+
+
+def test_trocar_de_nave_atualiza_o_buscador():
+    """Sair de uma nave pequena para o Type-9 muda o pad exigido e o porão."""
+    import compras
+
+    buscador = compras.Buscador("sidewinder", 4)
+    buscador.nave, buscador.capacidade = "type9", 720
+
+    assert buscador._volume_minimo() == 180
+
+
+def test_falha_no_buscador_nao_derruba_o_ciclo():
+    class BuscadorQueExplode:
+        def sugestoes(self, obras, sistema, agora):
+            raise RuntimeError("a API sumiu")
+
+    e = estado.EstadoCliente()
+
+    monitor.sincronizar(
+        BASICO, {}, CONFIG, e,
+        enviar=lambda p, c: monitor.Resposta(200, ""),
+        enviar_retrato=lambda r, c: monitor.Resposta(200, ""),
+        buscador=BuscadorQueExplode(),
+    )
+
+    assert any("compra" in erro["mensagem"] for erro in e.como_dicionario()["erros"])

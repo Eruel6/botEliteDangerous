@@ -39,11 +39,18 @@
 <table><thead><tr><th>Instalação</th><th>Progresso</th><th>Materiais faltando</th><th>Unidades</th></tr></thead>
 <tbody id="instalacoes"></tbody></table>
 
+<h2 style="font-size:13px;color:#9a8b76;text-transform:uppercase">Onde comprar</h2>
+<div id="compras"></div>
+
 <h2 style="font-size:13px;color:#9a8b76;text-transform:uppercase">Erros recentes</h2>
 <table><thead><tr><th>Quando</th><th>O quê</th></tr></thead><tbody id="erros"></tbody></table>
 
 <script>
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
+// Só hora e minuto: o painel diz "dados de 14:32", não "dados de 14:32:07".
+const horaCurta = (iso) => iso
+  ? new Date(iso).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
+  : null;
 
 // Tudo entra como texto, nunca como HTML. A mensagem de erro carrega o corpo
 // da resposta do servidor, e o edge do Render devolve uma página inteira quando
@@ -83,6 +90,54 @@ function pintar(d) {
 
   preencher(document.getElementById("erros"), "nenhum erro", 2,
     d.erros.map(e => [[hora(e.quando)], [e.mensagem, "erro"]]));
+
+  const compras = document.getElementById("compras");
+  compras.replaceChildren();
+  if (!d.compras || !d.compras.length) {
+    const vazio = document.createElement("p");
+    vazio.className = "vazio";
+    vazio.textContent = "nada faltando, ou nenhum sistema conhecido ainda";
+    compras.appendChild(vazio);
+  }
+  for (const s of d.compras || []) {
+    const bloco = document.createElement("div");
+    bloco.style.marginBottom = "12px";
+
+    const titulo = document.createElement("div");
+    titulo.textContent = `${s.material} — falta ${s.faltando}`;
+    if (s.desatualizado) {
+      const quando = horaCurta(s.quando);
+      titulo.textContent += quando ? ` (dados de ${quando})` : " (dados antigos)";
+    }
+    bloco.appendChild(titulo);
+
+    if (!s.consultavel) {
+      const nota = document.createElement("div");
+      nota.className = "vazio";
+      nota.textContent = "sem dados de compra até alguém reportar esta obra de novo";
+      bloco.appendChild(nota);
+    } else if (!s.estacoes.length) {
+      const nota = document.createElement("div");
+      nota.className = "vazio";
+      // Sem estações e desatualizado não é "não há nada": é "não consegui
+      // perguntar". Dizer "nada dentro de 50 ly" aqui seria mentira.
+      nota.textContent = s.desatualizado
+        ? "não consegui consultar agora"
+        : "nada dentro de 50 ly";
+      bloco.appendChild(nota);
+    }
+
+    for (const e of s.estacoes) {
+      const linha = document.createElement("div");
+      linha.style.paddingLeft = "16px";
+      linha.textContent =
+        `${e.carrier ? "🛸 " : ""}${e.nome} · ${e.sistema} · ` +
+        `${e.distancia_ly} ly · ${Math.round(e.distancia_ls)} Ls · ` +
+        `${e.estoque} t · ${e.preco} cr`;
+      bloco.appendChild(linha);
+    }
+    compras.appendChild(bloco);
+  }
 }
 
 async function atualizar() {

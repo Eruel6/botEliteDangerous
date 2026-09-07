@@ -1,0 +1,2 @@
+{ "timestamp":"2025-05-20T17:00:00Z", "event":"Loadout", "Ship":"type9", "ShipName":"FRIEDRICH DER GROSSE", "CargoCapacity":720 }
+{ "timestamp":"2025-05-20T17:05:00Z", "event":"FSDJump", "StarSystem":"Sol" }
