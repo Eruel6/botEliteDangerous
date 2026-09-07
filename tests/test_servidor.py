@@ -742,3 +742,151 @@ def test_nada_mudou_nao_toca_no_canal(servidor):
     assert canal.enviadas == []
     assert existente.editada_para is None
     assert existente.apagada is False
+
+
+# --- endpoint do comandante ---------------------------------------------------
+
+
+class RequisicaoFalsa:
+    """Imita o Request do FastAPI: só o .json() é usado por receber_comandante."""
+
+    def __init__(self, corpo):
+        self._corpo = corpo
+
+    async def json(self):
+        return self._corpo
+
+
+PAYLOAD_COMANDANTE = {
+    "carga": [{"material": "Alumínio", "quantidade": 720}],
+    "alvo": {"market_id": 901, "sistema": "Sol"},
+    "entregas": [
+        {"quando": "2025-05-20T17:37:50Z", "market_id": 901,
+         "material": "Alumínio", "quantidade": 720}
+    ],
+}
+
+
+def test_comandante_sem_token_e_401(cliente_http):
+    """Este passa pelo HTTP porque conferir_token barra antes de tocar o banco."""
+    assert cliente_http.post("/comandante", json=PAYLOAD_COMANDANTE).status_code == 401
+
+
+def test_comandante_grava_carga_e_entregas(servidor_multi):
+    """Chama a corrotina direto, como o resto deste arquivo faz.
+
+    Pelo TestClient a app roda numa thread de portal, e a conexão sqlite foi
+    criada na thread da importação — daria ProgrammingError. Em produção o
+    uvicorn roda os handlers async na mesma thread do loop, então o caso não
+    existe fora do teste.
+    """
+    resposta = asyncio.run(
+        servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa")
+    )
+
+    assert resposta.status_code == 200
+    assert [l["material"] for l in servidor_multi.banco.listar_carga()] == ["Alumínio"]
+    assert servidor_multi.banco.entregas_por_pessoa(901) == {"Arthur": 720}
+
+
+def test_comandante_nao_depende_do_discord(servidor_multi):
+    """O /logdata devolve 503 sem o bot pronto; este endpoint não pode."""
+    assert servidor_multi.client.is_ready() is False
+
+    resposta = asyncio.run(
+        servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa")
+    )
+
+    assert resposta.status_code == 200
+
+
+def test_comandante_com_carga_invalida_e_400(servidor_multi):
+    import pytest as _pytest
+
+    with _pytest.raises(Exception) as erro:
+        asyncio.run(
+            servidor_multi.receber_comandante(RequisicaoFalsa({"carga": "não é lista"}), "aaa")
+        )
+
+    assert erro.value.status_code == 400
+
+
+def test_comandante_reenviado_nao_duplica_entrega(servidor_multi):
+    """O cliente reenvia a sessão inteira a cada ciclo."""
+    for _ in range(3):
+        asyncio.run(
+            servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa")
+        )
+
+    assert servidor_multi.banco.entregas_por_pessoa(901) == {"Arthur": 720}
+
+
+def test_comandante_substitui_a_carga_anterior(servidor_multi):
+    asyncio.run(servidor_multi.receber_comandante(RequisicaoFalsa(PAYLOAD_COMANDANTE), "aaa"))
+    outro = dict(PAYLOAD_COMANDANTE, carga=[{"material": "Aço", "quantidade": 50}])
+
+    asyncio.run(servidor_multi.receber_comandante(RequisicaoFalsa(outro), "aaa"))
+
+    assert [l["material"] for l in servidor_multi.banco.listar_carga()] == ["Aço"]
+
+
+def _obra_de_teste_com_sistema(nome, requerido, fornecido, market_id, sistema):
+    import ed_parser
+
+    return ed_parser.instalacao_de_payload(
+        nome,
+        [{"Name_Localised": "Steel", "RequiredAmount": requerido, "ProvidedAmount": fornecido}],
+        market_id=market_id,
+        sistema=sistema,
+    )
+
+
+def test_a_caminho_ignora_carga_mais_velha_que_a_validade(servidor):
+    import datetime
+
+    agora = datetime.datetime.now(datetime.timezone.utc)
+    servidor.banco.salvar(
+        _obra_de_teste_com_sistema("Obra", 1000, 0, market_id=901, sistema="Sol"),
+        message_id=1,
+    )
+    servidor.banco.substituir_carga(
+        "Antigo", {"Steel": 300}, alvo=901, sistema="Sol",
+        quando=agora - datetime.timedelta(hours=1),
+    )
+    servidor.banco.substituir_carga(
+        "Novo", {"Steel": 200}, alvo=901, sistema="Sol", quando=agora
+    )
+
+    obras = [r.instalacao for r in servidor.banco.listar(pendentes=True)]
+
+    assert servidor.a_caminho_por_material(servidor.banco, obras, agora) == {"Steel": 200}
+
+
+def test_o_credito_nao_e_reconciliado_do_canal(servidor):
+    """Reler o rodapé duplicaria: o cliente reenvia a sessão inteira todo ciclo,
+    então o total do canal e as entregas reenviadas se somariam."""
+    import ed_parser
+
+    bot = UsuarioFalso(42)
+    inst = ed_parser.instalacao_de_payload(
+        "Planetary Construction Site: X",
+        [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}],
+    )
+    texto = ed_parser.formatar_mensagem_discord(inst, "40.0%", creditos={"Eruel": 1440})
+    canal = CanalFalso([MensagemComConteudo(333, texto, bot)], bot=bot)
+
+    asyncio.run(servidor.reconciliar_com_o_canal(canal, autor=bot))
+
+    assert servidor.banco.entregas_por_pessoa(333) == {}
+
+
+def test_a_mensagem_da_obra_leva_o_credito_acumulado(servidor):
+    servidor.banco.registrar_entregas("Eruel", [
+        {"quando": "2025-05-20T17:00:00Z", "market_id": 901, "material": "Aço", "quantidade": 1440},
+    ])
+    inst = _obra_de_teste_com_sistema("Obra", 100, 10, market_id=901, sistema="Sol")
+
+    creditos = servidor.banco.entregas_por_pessoa(inst.market_id)
+    texto = __import__("ed_parser").formatar_mensagem_discord(inst, "10.0%", creditos=creditos)
+
+    assert "-# entregue: Eruel 1440t" in texto

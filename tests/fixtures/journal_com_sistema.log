@@ -1,0 +1,4 @@
+{ "timestamp":"2025-05-20T17:00:00Z", "event":"FSDJump", "StarSystem":"Wregoe KP-E c25-11" }
+{ "timestamp":"2025-05-20T17:05:00Z", "event":"ApproachSettlement", "MarketID":901, "Name":"Planetary Construction Site: Alfa" }
+{ "timestamp":"2025-05-20T17:06:00Z", "event":"ColonisationConstructionDepot", "MarketID":901, "ConstructionProgress":0.1, "ResourcesRequired":[{"Name":"$Steel_name;","Name_Localised":"Aço","RequiredAmount":100,"ProvidedAmount":10}] }
+{ "timestamp":"2025-05-20T18:00:00Z", "event":"FSDJump", "StarSystem":"Outro Sistema" }

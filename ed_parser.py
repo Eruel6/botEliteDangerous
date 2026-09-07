@@ -46,6 +46,7 @@ class Instalacao:
     progresso: float = 0.0
     completa: bool = False
     falhou: bool = False
+    sistema: str = ""
     _ordem: int = -1
 
     @property
@@ -89,7 +90,12 @@ def _material(bruto):
     )
 
 
-def _registros(caminho_log):
+def registros(caminho_log):
+    """Cada linha do Journal como dicionário; linhas inválidas são puladas.
+
+    Público porque o comandante.py precisa do mesmo fluxo — dois parsers do
+    mesmo arquivo seria uma divergência esperando para acontecer.
+    """
     with open(caminho_log, "r", encoding="utf-8") as f:
         for linha in f:
             try:
@@ -103,11 +109,18 @@ def extrair_instalacoes(caminho_log):
     por_market = {}
     candidatos = {}
     sinais = set()
+    sistema_corrente = ""
 
-    for ordem, registro in enumerate(_registros(caminho_log)):
+    for ordem, registro in enumerate(registros(caminho_log)):
         if not isinstance(registro, dict):
             continue
         evento = registro.get("event")
+
+        # Qualquer evento que carregue StarSystem serve: FSDJump, Location,
+        # Docked, SupercruiseExit. Rastrear o corrente cobre a obra planetária,
+        # que é aproximada sem pouso e cujo ApproachSettlement não traz sistema.
+        if registro.get("StarSystem"):
+            sistema_corrente = registro["StarSystem"]
 
         if evento in ("ApproachSettlement", "Docked"):
             nome = registro.get("Name") or registro.get("StationName")
@@ -129,6 +142,7 @@ def extrair_instalacoes(caminho_log):
             instalacao.completa = registro.get("ConstructionComplete", False)
             instalacao.falhou = registro.get("ConstructionFailed", False)
             instalacao._ordem = ordem
+            instalacao.sistema = sistema_corrente
 
     for market_id, instalacao in por_market.items():
         instalacao.nome = _melhor_nome(candidatos.get(market_id, []), sinais)
@@ -140,19 +154,20 @@ def sinais_de_construcao(caminho_log):
     """Nomes dos Planetary Construction Sites anunciados por FSSSignalDiscovered."""
     return {
         r["SignalName"]
-        for r in _registros(caminho_log)
+        for r in registros(caminho_log)
         if isinstance(r, dict)
         and r.get("event") == "FSSSignalDiscovered"
         and MARCA_CONSTRUCAO in r.get("SignalName", "")
     }
 
 
-def instalacao_de_payload(nome, materiais, market_id=None):
+def instalacao_de_payload(nome, materiais, market_id=None, sistema=""):
     """Monta uma ``Instalacao`` a partir do JSON recebido pela API."""
     return Instalacao(
         market_id=market_id,
         nome=nome,
         materiais=[_material(m) for m in materiais],
+        sistema=sistema,
     )
 
 
@@ -174,7 +189,55 @@ def encontrar_log_mais_recente(pasta=None):
     return max(arquivos, key=os.path.getmtime)
 
 
-def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None):
+LIMITE_LINHA_CREDITO = 300
+
+
+def formatar_creditos(por_pessoa, limite=LIMITE_LINHA_CREDITO):
+    """"entregue: Eruel 1440t · btpopov 720t", cortada no limite."""
+    if not por_pessoa:
+        return ""
+
+    ordenado = sorted(por_pessoa.items(), key=lambda item: (-item[1], item[0]))
+    partes = []
+    tamanho = len("entregue: ")
+    for quem, total in ordenado:
+        pedaco = f"{quem} {total}t"
+        adicional = len(pedaco) + (3 if partes else 0)
+        if tamanho + adicional > limite:
+            break
+        partes.append(pedaco)
+        tamanho += adicional
+
+    restantes = len(ordenado) - len(partes)
+    if restantes:
+        partes.append(f"+{restantes}")
+    return "entregue: " + " · ".join(partes)
+
+
+_LINHA_DE_CREDITO = re.compile(r"^-# entregue: (.+)$", re.MULTILINE)
+_UM_CREDITO = re.compile(r"^(.+) (\d+)t$")
+
+
+def creditos_na_mensagem(conteudo):
+    """Créditos relidos de uma mensagem já postada. O '+N' final é descartado.
+
+    Não é usada pela reconciliação: reler o total do canal duplicaria, porque o
+    cliente reenvia todas as entregas da sessão a cada ciclo. Existe para o
+    formato ser testável de ida e volta, e para uma reconciliação futura com
+    armazenamento persistente.
+    """
+    achado = _LINHA_DE_CREDITO.search(conteudo or "")
+    if not achado:
+        return {}
+    creditos = {}
+    for pedaco in achado.group(1).split(" · "):
+        item = _UM_CREDITO.match(pedaco.strip())
+        if item:
+            creditos[item.group(1)] = int(item.group(2))
+    return creditos
+
+
+def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None, creditos=None):
     """Bloco de código para o Discord. ``porcentagem`` e ``rodape`` são opcionais."""
     sufixo = f" `{porcentagem}`" if porcentagem is not None else ""
     linhas = [f"📍 **Materiais para instalação:** `{instalacao.nome}`{sufixo}\n"]
@@ -187,6 +250,9 @@ def formatar_mensagem_discord(instalacao, porcentagem=None, rodape=None):
     if rodape:
         # -# é a marcação de subtexto do Discord: menor e apagado.
         linhas.append(f"-# {rodape}")
+    linha_credito = formatar_creditos(creditos or {})
+    if linha_credito:
+        linhas.append(f"-# {linha_credito}")
     return "\n".join(linhas)
 
 

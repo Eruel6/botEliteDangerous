@@ -15,6 +15,7 @@ class LinhaConsolidada:
     material: str
     faltando: int
     obras: int
+    a_caminho: int = 0
 
 
 @dataclass(frozen=True)
@@ -28,8 +29,14 @@ class Retrato:
     obras: frozenset
 
 
-def consolidar(instalacoes):
-    """Retrato do que falta, somando todas as obras."""
+def consolidar(instalacoes, a_caminho=None):
+    """Retrato do que falta, somando todas as obras.
+
+    ``a_caminho`` é {material: total já no porão de alguém}, e só decora as
+    linhas: não desconta do faltando nem muda a ordenação. O que a lista
+    responde é "quanto esta obra ainda precisa", e carga a caminho evapora.
+    """
+    a_caminho = a_caminho or {}
     totais = {}
     obras = set()
 
@@ -47,7 +54,12 @@ def consolidar(instalacoes):
             obras.add(instalacao.nome)
 
     linhas = tuple(
-        LinhaConsolidada(material=nome, faltando=faltando, obras=quantas)
+        LinhaConsolidada(
+            material=nome,
+            faltando=faltando,
+            obras=quantas,
+            a_caminho=a_caminho.get(nome, 0),
+        )
         for nome, (faltando, quantas) in sorted(
             totais.items(), key=lambda item: (-item[1][0], item[0])
         )
@@ -62,6 +74,7 @@ LIMITE_LINHA_OBRAS = 300
 LARGURA_MATERIAL = 25
 LARGURA_FALTAM = 7
 LARGURA_OBRAS = 5
+LARGURA_CAMINHO = 9
 
 
 def nome_curto(nome):
@@ -107,10 +120,14 @@ def formatar_consolidado(retrato, quando):
     a linha de resumo do que foi cortado.
     """
     quantas = len(retrato.obras)
-    topo = (
-        f"{'Material':<{LARGURA_MATERIAL}} | {'Faltam':>{LARGURA_FALTAM}} | "
-        f"{'Obras':>{LARGURA_OBRAS}}"
-    )
+    # A coluna só existe quando há carga viva: sem isso ela ocuparia largura à
+    # toa na maior parte do tempo.
+    mostrar_caminho = any(l.a_caminho > 0 for l in retrato.linhas)
+
+    topo = f"{'Material':<{LARGURA_MATERIAL}} | {'Faltam':>{LARGURA_FALTAM}} | "
+    if mostrar_caminho:
+        topo += f"{'A caminho':>{LARGURA_CAMINHO}} | "
+    topo += f"{'Obras':>{LARGURA_OBRAS}}"
 
     fixo = [f"{CABECALHO} `{quantas} obra{'s' if quantas != 1 else ''}`"]
     linha_obras = _linha_de_obras(retrato.obras)
@@ -127,8 +144,10 @@ def formatar_consolidado(retrato, quando):
     for indice, linha in enumerate(retrato.linhas):
         candidata = (
             f"{linha.material:<{LARGURA_MATERIAL}} | {linha.faltando:>{LARGURA_FALTAM}} | "
-            f"{linha.obras:>{LARGURA_OBRAS}}"
         )
+        if mostrar_caminho:
+            candidata += f"{linha.a_caminho:>{LARGURA_CAMINHO}} | "
+        candidata += f"{linha.obras:>{LARGURA_OBRAS}}"
         if tamanho(corpo + [candidata], _resumo_do_corte(retrato.linhas[indice + 1:])) > LIMITE_MENSAGEM:
             break
         corpo.append(candidata)

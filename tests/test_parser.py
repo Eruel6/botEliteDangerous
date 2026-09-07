@@ -225,3 +225,93 @@ def test_rodape_nao_atrapalha_a_releitura_da_mensagem():
 
     assert ed.nome_na_mensagem(msg) == a.nome
     assert len(ed.materiais_na_mensagem(msg)) == len(a.materiais)
+
+
+COM_SISTEMA = os.path.join(FIXTURES, "journal_com_sistema.log")
+
+
+def test_registros_e_publico_e_devolve_os_eventos():
+    eventos = [r.get("event") for r in ed.registros(COM_SISTEMA)]
+
+    assert eventos == [
+        "FSDJump",
+        "ApproachSettlement",
+        "ColonisationConstructionDepot",
+        "FSDJump",
+    ]
+
+
+def test_a_obra_recebe_o_sistema_corrente():
+    """ApproachSettlement não traz StarSystem; o sistema vem do FSDJump anterior."""
+    (obra,) = ed.extrair_instalacoes(COM_SISTEMA)
+
+    assert obra.sistema == "Wregoe KP-E c25-11"
+
+
+def test_o_sistema_e_o_do_momento_da_obra_nao_o_ultimo_do_log():
+    """O log termina em outro sistema; a obra continua no sistema onde foi vista."""
+    (obra,) = ed.extrair_instalacoes(COM_SISTEMA)
+
+    assert obra.sistema != "Outro Sistema"
+
+
+def test_instalacao_de_payload_aceita_sistema():
+    inst = ed.instalacao_de_payload("X", [], market_id=1, sistema="Sol")
+
+    assert inst.sistema == "Sol"
+
+
+def test_instalacao_de_payload_sem_sistema_fica_vazia():
+    inst = ed.instalacao_de_payload("X", [], market_id=1)
+
+    assert inst.sistema == ""
+
+
+def test_credito_ordena_do_maior_para_o_menor():
+    assert ed.formatar_creditos({"btpopov": 720, "Eruel": 1440}) == (
+        "entregue: Eruel 1440t · btpopov 720t"
+    )
+
+
+def test_sem_entrega_nao_ha_linha_de_credito():
+    assert ed.formatar_creditos({}) == ""
+
+
+def test_credito_corta_no_limite_e_resume():
+    muitos = {f"Piloto{i:02d}": 100 - i for i in range(40)}
+
+    linha = ed.formatar_creditos(muitos, limite=120)
+
+    assert len(linha) <= 140
+    assert "+" in linha.rsplit("·", 1)[-1]
+
+
+def test_a_mensagem_de_obra_carrega_o_credito():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+
+    texto = ed.formatar_mensagem_discord(
+        inst, "40.0%", rodape="atualizado por Eruel", creditos={"Eruel": 1440}
+    )
+
+    assert "-# entregue: Eruel 1440t" in texto
+
+
+def test_o_credito_e_relido_da_mensagem():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+    texto = ed.formatar_mensagem_discord(
+        inst, "40.0%", creditos={"Eruel": 1440, "btpopov": 720}
+    )
+
+    assert ed.creditos_na_mensagem(texto) == {"Eruel": 1440, "btpopov": 720}
+
+
+def test_mensagem_sem_credito_relida_devolve_vazio():
+    inst = ed.instalacao_de_payload(
+        "Obra", [{"Name_Localised": "Aço", "RequiredAmount": 10, "ProvidedAmount": 4}]
+    )
+
+    assert ed.creditos_na_mensagem(ed.formatar_mensagem_discord(inst)) == {}

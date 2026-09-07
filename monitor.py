@@ -6,6 +6,7 @@ import time
 
 import requests
 
+import comandante
 import ed_parser
 
 INTERVALO_CHECAGEM = 60
@@ -73,7 +74,54 @@ def enviar_para_api(payload, config):
         return Resposta(None, _resumir(f"{type(e).__name__}: {e}"))
 
 
-def sincronizar(log_path, memoria, config, estado_cliente, enviar=enviar_para_api):
+def url_do_comandante(api_url):
+    """Deriva do API_URL em vez de pedir uma linha nova no config.txt.
+
+    Quem já instalou o cliente tem um config.txt apontando para /logdata;
+    exigir uma chave nova quebraria essas instalações no dia do deploy.
+    """
+    return api_url.rsplit("/", 1)[0] + "/comandante"
+
+
+def payload_do_comandante(retrato):
+    return {
+        "carga": [
+            {"material": material, "quantidade": quantidade}
+            for material, quantidade in retrato.carga.items()
+        ],
+        "alvo": {
+            "market_id": retrato.alvo_market_id,
+            "sistema": retrato.alvo_sistema,
+        },
+        "entregas": [
+            {
+                "quando": e.quando,
+                "market_id": e.market_id,
+                "material": e.material,
+                "quantidade": e.quantidade,
+            }
+            for e in retrato.entregas
+        ],
+    }
+
+
+def enviar_comandante(retrato, config):
+    try:
+        resp = requests.post(
+            url_do_comandante(config.api_url),
+            json=payload_do_comandante(retrato),
+            headers={"X-API-Token": config.api_token},
+            timeout=TIMEOUT_SEGUNDOS,
+        )
+        return Resposta(resp.status_code, _detalhe_da(resp))
+    except Exception as e:
+        return Resposta(None, _resumir(f"{type(e).__name__}: {e}"))
+
+
+def sincronizar(
+    log_path, memoria, config, estado_cliente,
+    enviar=enviar_para_api, enviar_retrato=None,
+):
     """Envia cada instalação cujo estado mudou e ainda não foi aceita.
 
     A assinatura só é gravada depois de um envio bem-sucedido, então um envio
@@ -108,6 +156,17 @@ def sincronizar(log_path, memoria, config, estado_cliente, enviar=enviar_para_ap
                 )
             )
 
+    # Padrão None e não a função real: assim nenhum teste que chame sincronizar
+    # sem se importar com o retrato acaba fazendo requisição de rede. Quem manda
+    # de verdade é o rodar().
+    if enviar_retrato is not None:
+        retrato = comandante.montar_retrato(log_path)
+        resposta = enviar_retrato(retrato, config)
+        if resposta.status is None or not (200 <= resposta.status < 300):
+            estado_cliente.registrar_erro(
+                _com_detalhe(f"comandante: envio recusado ({resposta.status})", resposta.detalhe)
+            )
+
 
 def rodar(config, estado_cliente, intervalo=INTERVALO_CHECAGEM):
     memoria = {}
@@ -115,7 +174,10 @@ def rodar(config, estado_cliente, intervalo=INTERVALO_CHECAGEM):
         log_path = ed_parser.encontrar_log_mais_recente()
         if log_path:
             try:
-                sincronizar(log_path, memoria, config, estado_cliente)
+                sincronizar(
+                    log_path, memoria, config, estado_cliente,
+                    enviar_retrato=enviar_comandante,
+                )
             except Exception as e:
                 estado_cliente.registrar_erro(f"erro ao processar o log: {e}")
         else:

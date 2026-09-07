@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 import armazenamento
 import consolidado
 import ed_parser
+import transito
 
 load_dotenv()
 DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
@@ -26,6 +27,7 @@ API_TOKENS_BRUTO = os.getenv("API_TOKENS", "")
 API_TOKEN = os.getenv("API_TOKEN")
 
 TEMPO_FINALIZACAO_HORAS = 2
+VALIDADE_CARGA_MINUTOS = 15
 MENSAGENS_A_VARRER = 200
 INTERVALO_VERIFICACAO_SEGUNDOS = 600
 CHECK = "✅"
@@ -183,10 +185,37 @@ async def reconciliar_consolidado(canal, autor):
     return escolhida
 
 
-def retrato_atual(banco_alvo):
+def a_caminho_por_material(banco_alvo, obras, agora):
+    """{material: total a caminho}, já limitado pelo que cada obra ainda precisa.
+
+    Carga relatada há mais de VALIDADE_CARGA_MINUTOS é ignorada: quem desloga
+    com o porão cheio esconderia material do esquadrão indefinidamente.
+    """
+    corte = agora - datetime.timedelta(minutes=VALIDADE_CARGA_MINUTOS)
+    por_pessoa = {}
+    for linha in banco_alvo.listar_carga(desde=corte):
+        dados = por_pessoa.setdefault(
+            linha["quem"], {"carga": {}, "alvo": linha["alvo"], "sistema": linha["sistema"]}
+        )
+        dados["carga"][linha["material"]] = linha["quantidade"]
+
+    total = {}
+    for dados in por_pessoa.values():
+        atribuido = transito.atribuir(
+            dados["carga"], obras, dados["alvo"], dados["sistema"]
+        )
+        for materiais in atribuido.values():
+            for material, quantidade in materiais.items():
+                total[material] = total.get(material, 0) + quantidade
+    return total
+
+
+def retrato_atual(banco_alvo, agora=None):
     """Consolidado do que está aberto agora, direto do banco."""
+    obras = [r.instalacao for r in banco_alvo.listar(pendentes=True)]
+    momento = agora or datetime.datetime.now(datetime.timezone.utc)
     return consolidado.consolidar(
-        [r.instalacao for r in banco_alvo.listar(pendentes=True)]
+        obras, a_caminho=a_caminho_por_material(banco_alvo, obras, momento)
     )
 
 
@@ -311,7 +340,14 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
     porcentagem = f"{instalacao.porcentagem:.1f}%"
     agora = datetime.datetime.now(datetime.timezone.utc)
     rodape = f"atualizado por {quem} às {agora.strftime('%H:%M')} UTC"
-    msg_formatada = ed_parser.formatar_mensagem_discord(instalacao, porcentagem, rodape)
+    creditos = (
+        banco.entregas_por_pessoa(instalacao.market_id)
+        if instalacao.market_id is not None
+        else {}
+    )
+    msg_formatada = ed_parser.formatar_mensagem_discord(
+        instalacao, porcentagem, rodape, creditos=creditos
+    )
 
     canal = client.get_channel(DISCORD_CHANNEL_ID)
 
@@ -337,6 +373,50 @@ async def receber_dados(request: Request, x_api_token: str = Header(default=None
         # pode derrubar a resposta ao cliente.
         print(f"Erro ao atualizar o consolidado: {e}")
 
+    return JSONResponse(content={"status": "ok"})
+
+
+@app.post("/comandante")
+async def receber_comandante(request: Request, x_api_token: str = Header(default=None)):
+    """Carga e entregas de uma pessoa. Não depende do Discord.
+
+    O /logdata devolve 503 enquanto o bot não conecta; aqui isso custaria a
+    carga do ciclo inteiro por nada, já que este endpoint só escreve no banco.
+    """
+    quem = conferir_token(x_api_token)
+
+    data = await request.json()
+    carga = data.get("carga") or []
+    entregas = data.get("entregas") or []
+    alvo = data.get("alvo") or {}
+
+    if not isinstance(carga, list) or not isinstance(entregas, list) or not isinstance(alvo, dict):
+        raise HTTPException(status_code=400, detail="Dados inválidos.")
+
+    itens = {}
+    for item in carga:
+        if not isinstance(item, dict):
+            continue
+        material = item.get("material")
+        quantidade = item.get("quantidade") or 0
+        if material and quantidade > 0:
+            itens[material] = itens.get(material, 0) + int(quantidade)
+
+    banco.substituir_carga(
+        quem, itens, alvo=alvo.get("market_id"), sistema=alvo.get("sistema") or ""
+    )
+    banco.registrar_entregas(
+        quem,
+        [
+            e
+            for e in entregas
+            if isinstance(e, dict)
+            and e.get("quando")
+            and e.get("market_id") is not None
+            and e.get("material")
+            and (e.get("quantidade") or 0) > 0
+        ],
+    )
     return JSONResponse(content={"status": "ok"})
 
 
