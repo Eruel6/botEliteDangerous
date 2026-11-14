@@ -130,7 +130,7 @@ def test_exploracao_a_bordo_conta_sistemas_e_corpos_escaneados():
 
 def test_resumo_ja_traz_campos_de_venda_e_morte_vazios():
     r = historico_vazio().resumo()
-    assert r["vendido"] == {"amostras": [], "total": 0, "exploracao_total": 0}
+    assert r["vendido"] == {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0}
     assert r["perdido"] == {"amostras": 0, "sistemas": 0}
     assert r["medias"] == {"por_amostra": None, "por_planeta": None, "por_sessao": None}
     assert r["carreira"] is None
@@ -326,3 +326,145 @@ def test_resumo_devolve_copias_e_mutar_nao_corrompe_o_historico():
     assert len(r2["a_bordo"]["amostras"]) == 1
     assert r2["vendido"]["amostras"][0]["valor"] == 1
     assert r2["carreira"]["Organic_Genus_Encountered"] == 3
+
+
+# ---- Onda final: limites, morte, campos Was* ausentes ----
+
+def morre(h, quando="2026-11-14T16:00:00Z"):
+    h.consumir({"timestamp": quando, "event": "Died"}, SESSAO)
+
+
+def saa(h, body, sa=SA):
+    h.consumir({"timestamp": "t", "event": "SAAScanComplete", "SystemAddress": sa,
+                "BodyID": body}, SESSAO)
+
+
+def pisa(h, body, sa=SA):
+    h.consumir({"timestamp": "t", "event": "Disembark", "OnPlanet": True,
+                "SystemAddress": sa, "BodyID": body}, SESSAO)
+
+
+def scan_em(body_id, quando, **kw):
+    ev = scan(body_id, **kw)
+    ev["timestamp"] = quando
+    return ev
+
+
+def test_primeiros_lista_no_maximo_50_corpos_mais_recentes_primeiro():
+    h = historico_vazio()
+    for i in range(60):
+        h.consumir(scan_em(i, f"2026-11-14T10:{i:02d}:00Z"), SESSAO)
+    p = h.resumo()["primeiros"]
+    assert exploracao.LIMITE_LISTA == 50
+    assert len(p["corpos"]) == 50
+    assert p["corpos"][0]["corpo"] == "Sis 59"
+    assert p["corpos"][-1]["corpo"] == "Sis 10"
+    assert p["corpos_descobertos"] == 60
+    assert p["total_corpos"] == 60
+
+
+def test_vendido_lista_no_maximo_50_vendas_mais_recentes_primeiro():
+    h = historico_vazio()
+    for i in range(60):
+        h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000 + i, 0)],
+                                  quando=f"2026-11-14T10:{i:02d}:00Z"), SESSAO)
+    r = h.resumo()
+    v = r["vendido"]
+    assert len(v["amostras"]) == 50
+    assert v["amostras"][0]["valor"] == 1_059
+    assert v["amostras"][-1]["valor"] == 1_010
+    assert v["quantidade"] == 60
+    assert v["total"] == sum(1_000 + i for i in range(60))
+    assert r["medias"]["por_amostra"] == round(sum(1_000 + i for i in range(60)) / 60)
+
+
+def test_a_bordo_nao_tem_limite():
+    h = historico_vazio()
+    for i in range(60):
+        h.consumir(organico("Analyse", body=i), SESSAO)
+    assert len(h.resumo()["a_bordo"]["amostras"]) == 60
+
+
+def test_morte_tira_o_credito_de_descoberta_e_mapeamento_a_bordo():
+    h = historico_vazio()
+    h.consumir(scan(0, dist=0.0), SESSAO)
+    h.consumir(scan(3), SESSAO)
+    saa(h, 3)
+    morre(h)
+    p = h.resumo()["primeiros"]
+    assert p["corpos"] == []
+    assert (p["sistemas_descobertos"], p["corpos_descobertos"], p["mapeados"]) == (0, 0, 0)
+
+
+def test_morte_depois_de_vender_a_exploracao_mantem_o_credito():
+    h = historico_vazio()
+    h.consumir(scan(0, dist=0.0), SESSAO)
+    h.consumir(scan(3), SESSAO)
+    saa(h, 3)
+    h.consumir({"timestamp": "t", "event": "SellExplorationData", "Systems": ["Sis"],
+                "TotalEarnings": 10}, SESSAO)
+    morre(h)
+    p = h.resumo()["primeiros"]
+    assert (p["sistemas_descobertos"], p["corpos_descobertos"], p["mapeados"]) == (1, 2, 1)
+
+
+def test_morte_mantem_o_pisou():
+    h = historico_vazio()
+    h.consumir(scan(3), SESSAO)
+    pisa(h, 3)
+    morre(h)
+    [c] = h.resumo()["primeiros"]["corpos"]
+    assert (c["descobriu"], c["mapeou"], c["pisou"]) == (False, False, True)
+
+
+def test_reescanear_depois_da_morte_reavalia_pelo_novo_scan():
+    h = historico_vazio()
+    h.consumir(scan(0, dist=0.0), SESSAO)
+    h.consumir(scan(3), SESSAO)
+    h.consumir(scan(4), SESSAO)
+    morre(h)
+    h.consumir(scan(0, dist=0.0), SESSAO)         # ainda não descoberto: o crédito volta
+    h.consumir(scan(3, descoberto=True), SESSAO)  # alguém vendeu antes: vale este Scan novo
+    h.consumir(scan(3), SESSAO)                   # e um Scan seguinte não o substitui
+    h.consumir(scan(4), SESSAO)
+    saa(h, 4)
+    p = h.resumo()["primeiros"]
+    assert p["sistemas_descobertos"] == 1
+    corpos = {c["corpo"]: c for c in p["corpos"]}
+    assert corpos["Sis 0"]["descobriu"] is True
+    assert "Sis 3" not in corpos
+    assert (corpos["Sis 4"]["descobriu"], corpos["Sis 4"]["mapeou"]) == (True, True)
+
+
+def scan_sem_was(body_id, dist=10.0):
+    ev = scan(body_id, dist=dist)
+    for campo in ("WasDiscovered", "WasMapped", "WasFootfalled"):
+        del ev[campo]
+    return ev
+
+
+def test_scan_sem_campos_was_nao_conta_como_primeiro():
+    h = historico_vazio()
+    h.consumir(scan_sem_was(0, dist=0.0), SESSAO)
+    saa(h, 0)
+    pisa(h, 0)
+    p = h.resumo()["primeiros"]
+    assert p["corpos"] == []
+    assert (p["sistemas_descobertos"], p["corpos_descobertos"],
+            p["mapeados"], p["pisados"]) == (0, 0, 0, 0)
+
+
+def test_amostra_em_corpo_sem_was_footfalled_tem_bonus_desconhecido():
+    h = historico_vazio()
+    h.consumir(scan_sem_was(7), SESSAO)
+    h.consumir(organico("Analyse", body=7), SESSAO)
+    [a] = h.resumo()["a_bordo"]["amostras"]
+    assert a["bonus"] == "desconhecido"
+    assert a["valor_estimado"] == 1_000_000
+
+
+def test_previsao_improvavel_com_bonus_pago_erra():
+    h = historico_com_analyse(corpo_nao_pisado=False)
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
+    [v] = h.resumo()["vendido"]["amostras"]
+    assert (v["previsao"], v["acertou"]) == ("improvavel", False)

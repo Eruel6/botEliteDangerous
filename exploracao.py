@@ -6,6 +6,9 @@ import copy
 from precos_vista import Precos
 
 BONUS_PRIMEIRO_REGISTRO = 5
+# Quantos itens as listas de primeiros e de vendidas mostram (as mais recentes).
+# Os contadores, totais e médias continuam sobre o histórico inteiro.
+LIMITE_LISTA = 50
 
 
 class Historico:
@@ -15,11 +18,12 @@ class Historico:
         self._scans = {}             # (SystemAddress, BodyID) -> dados do primeiro Scan
         self._mapeados = set()       # chaves de corpo com SAAScanComplete
         self._pisados = set()        # chaves de corpo com Disembark em planeta
-        self._sistemas_descobertos = set()   # SystemAddress
+        self._sistemas_descobertos = {}      # SystemAddress -> chave do Scan da estrela de chegada
         self._sistemas_com_chegada = set()   # SystemAddress já avaliados por DistanceFromArrivalLS == 0
         self._amostras = []
         # exploração a bordo: nome do sistema -> chaves de corpos escaneados
         self._exploracao = {}
+        self._corpos_vendidos = set()   # chaves de corpo cujos dados de exploração já foram vendidos
         self._carreira = None
         self._vendidas = []
         self._exploracao_vendida = 0
@@ -45,18 +49,27 @@ class Historico:
         self._lembrar_sistema(ev)
         sa = ev["SystemAddress"]
         chave = (sa, ev["BodyID"])
-        if chave not in self._scans:
+        # Was* ausente (journals antigos) fica None: só False explícito conta como primeiro.
+        anterior = self._scans.get(chave)
+        if anterior is None:
             self._scans[chave] = {
                 "nome": ev.get("BodyName") or f"corpo {ev['BodyID']}",
                 "sa": sa,
-                "descoberto": bool(ev.get("WasDiscovered")),
-                "mapeado": bool(ev.get("WasMapped")),
-                "pisado": bool(ev.get("WasFootfalled")),
+                "quando": ev.get("timestamp", ""),
+                "descoberto": ev.get("WasDiscovered"),
+                "mapeado": ev.get("WasMapped"),
+                "pisado": ev.get("WasFootfalled"),
+                "perdido": False,
             }
+        elif anterior["perdido"]:
+            # Os dados deste corpo morreram a bordo: o novo Scan é o que vale agora.
+            # O "pisado" fica o do primeiro Scan (pisar não se perde na morte).
+            anterior.update(quando=ev.get("timestamp", ""), descoberto=ev.get("WasDiscovered"),
+                            mapeado=ev.get("WasMapped"), perdido=False)
         if ev.get("DistanceFromArrivalLS") == 0 and sa not in self._sistemas_com_chegada:
             self._sistemas_com_chegada.add(sa)
-            if not ev.get("WasDiscovered"):
-                self._sistemas_descobertos.add(sa)
+            if ev.get("WasDiscovered") is False:
+                self._sistemas_descobertos[sa] = chave
         nome_sistema = self._sistemas.get(sa, f"sistema {sa}")
         self._exploracao.setdefault(nome_sistema, set()).add(chave)
 
@@ -78,7 +91,7 @@ class Historico:
         scan = self._scans.get((sa, corpo_id))
         especie = ev.get("Species_Localised") or ev.get("Species") or ""
         preco = self._precos.preco(especie)
-        if scan is None:
+        if scan is None or scan["pisado"] is None:
             bonus = "desconhecido"
         else:
             bonus = "improvavel" if scan["pisado"] else "provavel"
@@ -133,23 +146,35 @@ class Historico:
     def _ao_SellExplorationData(self, ev, sessao):
         self._exploracao_vendida += ev.get("TotalEarnings") or 0
         for nome in ev.get("Systems") or []:
-            self._exploracao.pop(nome, None)
+            self._corpos_vendidos |= self._exploracao.pop(nome, set())
 
     def _ao_MultiSellExplorationData(self, ev, sessao):
         self._exploracao_vendida += ev.get("TotalEarnings") or 0
         for d in ev.get("Discovered") or []:
-            self._exploracao.pop(d.get("SystemName"), None)
+            self._corpos_vendidos |= self._exploracao.pop(d.get("SystemName"), set())
 
     def _ao_Died(self, ev, sessao):
         self._perdido["amostras"] += len(self._amostras)
         self._perdido["sistemas"] += len(self._exploracao)
+        # Descoberta e mapeamento só ficam garantidos quando vendidos: morrer com
+        # os dados a bordo perde o crédito. Pisar fica (spec, pendência 3).
+        perdidos = set().union(*self._exploracao.values()) - self._corpos_vendidos
+        for chave in perdidos:
+            if chave in self._scans:
+                self._scans[chave]["perdido"] = True
+            self._mapeados.discard(chave)
+        for sa, chave in list(self._sistemas_descobertos.items()):
+            if chave in perdidos:
+                del self._sistemas_descobertos[sa]
+                self._sistemas_com_chegada.discard(sa)   # a próxima chegada reavalia
         self._amostras = []
         self._exploracao = {}
 
     def resumo(self) -> dict:
         return copy.deepcopy({
             "a_bordo": self._a_bordo(),
-            "vendido": {"amostras": self._vendidas,
+            "vendido": {"amostras": self._vendidas[::-1][:LIMITE_LISTA],
+                        "quantidade": len(self._vendidas),
                         "total": sum(v["valor"] for v in self._vendidas),
                         "exploracao_total": self._exploracao_vendida},
             "perdido": self._perdido,
@@ -186,21 +211,24 @@ class Historico:
         }
 
     def _primeiros(self):
-        corpos = []
+        corpos = []   # (quando do primeiro Scan, linha)
         for chave, s in self._scans.items():
-            descobriu = not s["descoberto"]
-            mapeou = chave in self._mapeados and not s["mapeado"]
-            pisou = chave in self._pisados and not s["pisado"]
+            descobriu = s["descoberto"] is False and not s["perdido"]
+            mapeou = chave in self._mapeados and s["mapeado"] is False and not s["perdido"]
+            pisou = chave in self._pisados and s["pisado"] is False
             if descobriu or mapeou or pisou:
-                corpos.append({
+                corpos.append((s["quando"], {
                     "corpo": s["nome"],
                     "sistema": self._sistemas.get(s["sa"], f"sistema {s['sa']}"),
                     "descobriu": descobriu, "mapeou": mapeou, "pisou": pisou,
-                })
+                }))
+        # Mais recentes primeiro; no empate, o que entrou por último vem antes.
+        recentes = sorted(reversed(corpos), key=lambda par: par[0], reverse=True)
         return {
             "sistemas_descobertos": len(self._sistemas_descobertos),
-            "corpos_descobertos": sum(c["descobriu"] for c in corpos),
-            "mapeados": sum(c["mapeou"] for c in corpos),
-            "pisados": sum(c["pisou"] for c in corpos),
-            "corpos": corpos,
+            "corpos_descobertos": sum(c["descobriu"] for _, c in corpos),
+            "mapeados": sum(c["mapeou"] for _, c in corpos),
+            "pisados": sum(c["pisou"] for _, c in corpos),
+            "total_corpos": len(corpos),
+            "corpos": [c for _, c in recentes[:LIMITE_LISTA]],
         }
