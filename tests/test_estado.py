@@ -103,3 +103,10 @@ def test_as_compras_entram_no_dicionario():
 
 def test_sem_compras_o_dicionario_traz_lista_vazia():
     assert estado.EstadoCliente().como_dicionario()["compras"] == []
+
+
+def test_exploracao_comeca_carregando_e_depois_traz_o_resumo():
+    e = estado.EstadoCliente()
+    assert e.exploracao() == {"carregando": True}
+    e.registrar_exploracao({"a_bordo": {}})
+    assert e.exploracao() == {"carregando": False, "a_bordo": {}}

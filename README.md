@@ -23,6 +23,11 @@ O `MarketID` é a chave que liga os dois. Toda essa leitura vive em `ed_parser.p
 | `estado.py` | Estado vivo do cliente: o monitor escreve, o painel lê. |
 | `monitor.py` | O loop do cliente: lê o Journal e envia o que mudou. |
 | `painel.py` | Painel HTTP local de status, só leitura, em `127.0.0.1`. |
+| `exploracao.py` | Histórico de exploração: amostras a bordo, vendidas e perdidas, primeiras descobertas. |
+| `leitor_exploracao.py` | Lê todos os Journals de forma incremental e alimenta a aba Exploração do painel. |
+| `precos_vista.py` | Tabela de preços da Vista Genomics (venda de dados biológicos). |
+| `precos_vista.json` | Os preços em si, gerados por `scripts/atualizar_precos_vista.py`. |
+| `scripts/atualizar_precos_vista.py` | Regrava `precos_vista.json` a partir do site (ou de um HTML salvo, com `--html`). Roda à mão. |
 | `armazenamento.py` | Estado do servidor (instalação → id da mensagem) em SQLite. |
 | `servidor.py` | API FastAPI + bot do Discord. É o que roda no Render. |
 | `bot_discord_ed.py` | Geração anterior: bot local que lê o Journal apontado por `LOG_FILE`. |
@@ -66,8 +71,11 @@ credencial individual.
 ## Distribuindo para o esquadrão
 
 Monte um zip com: `cliente.py`, `monitor.py`, `painel.py`, `painel.html`,
-`estado.py`, `config_cliente.py`, `ed_parser.py`, `config.exemplo.txt` e
-`iniciar.bat`.
+`estado.py`, `config_cliente.py`, `ed_parser.py`, `comandante.py`,
+`compras.py`, `ardent.py`, `exploracao.py`, `leitor_exploracao.py`,
+`precos_vista.py`, `precos_vista.json`, `config.exemplo.txt` e `iniciar.bat`.
+
+(`tests/test_readme.py` confere que esta lista traz tudo o que o cliente importa.)
 
 Instruções para quem recebe:
 

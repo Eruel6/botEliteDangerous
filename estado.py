@@ -29,6 +29,7 @@ class EstadoCliente:
         self._instalacoes = []
         self._erros = []
         self._compras = []
+        self._exploracao = None
         self._inicio = _agora()
 
     def registrar_leitura(self, journal, instalacoes):
@@ -60,6 +61,17 @@ class EstadoCliente:
         """Sugestões de compra já prontas para o painel, como dicionários."""
         with self._lock:
             self._compras = list(sugestoes)
+
+    def registrar_exploracao(self, resumo):
+        with self._lock:
+            self._exploracao = dict(resumo)
+
+    def exploracao(self):
+        """{"carregando": True} até o primeiro registro; depois o resumo."""
+        with self._lock:
+            if self._exploracao is None:
+                return {"carregando": True}
+            return {"carregando": False, **self._exploracao}
 
     def como_dicionario(self):
         with self._lock:

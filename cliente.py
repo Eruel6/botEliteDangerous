@@ -18,7 +18,22 @@ def _aguardar_ate_interromper():
         time.sleep(INTERVALO_ESPERA_OCIOSA_SEGUNDOS)
 
 
-def main(aguardar=_aguardar_ate_interromper):
+def _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente):
+    """A aba de exploração é um extra: se não subir, a colonização segue.
+
+    O import é feito aqui, e não no topo, para que um zip sem os arquivos da
+    exploração (ou sem precos_vista.json) vire só um erro no painel."""
+    try:
+        if iniciar_exploracao is None:
+            import leitor_exploracao
+            iniciar_exploracao = leitor_exploracao.iniciar_thread
+        iniciar_exploracao(estado_cliente)
+    except Exception as e:
+        estado_cliente.registrar_erro(f"exploração: {e}")
+
+
+def main(aguardar=_aguardar_ate_interromper,
+         iniciar_exploracao=None):
     estado_cliente = estado.EstadoCliente()
 
     try:
@@ -29,6 +44,7 @@ def main(aguardar=_aguardar_ate_interromper):
         # colar o token no config.txt e não entender por que nada aparece.
         estado_cliente.registrar_erro(str(e))
         _, porta = painel.iniciar_painel(estado_cliente)
+        _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente)
         url = f"http://127.0.0.1:{porta}"
 
         print(f"\n[CONFIGURAÇÃO] {e}")
@@ -42,6 +58,7 @@ def main(aguardar=_aguardar_ate_interromper):
         return 1
 
     _, porta = painel.iniciar_painel(estado_cliente)
+    _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente)
     url = f"http://127.0.0.1:{porta}"
 
     print(f"Painel em {url}")

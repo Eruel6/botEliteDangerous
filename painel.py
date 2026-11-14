@@ -1,7 +1,7 @@
 # painel.py
 """Servidor HTTP local que mostra o estado do cliente.
 
-Só leitura, só em 127.0.0.1, e só duas rotas explícitas — servir o diretório
+Só leitura, só em 127.0.0.1, e só três rotas explícitas — servir o diretório
 exporia o config.txt, que tem o token de quem está rodando.
 """
 
@@ -23,6 +23,12 @@ def _criar_handler(estado_cliente):
                     200,
                     "application/json; charset=utf-8",
                     json.dumps(estado_cliente.como_dicionario(), ensure_ascii=False),
+                )
+            elif self.path == "/exploracao.json":
+                self._responder(
+                    200,
+                    "application/json; charset=utf-8",
+                    json.dumps(estado_cliente.exploracao(), ensure_ascii=False),
                 )
             elif self.path in ("/", "/index.html"):
                 with open(CAMINHO_HTML, encoding="utf-8") as f:
