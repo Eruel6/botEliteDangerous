@@ -17,6 +17,7 @@ INTERVALO_PADRAO = 60
 
 _NOME_NOVO = re.compile(r"^Journal\.(\d{4}-\d{2}-\d{2}T\d{6})\.(\d+)\.log$")
 _NOME_ANTIGO = re.compile(r"^Journal\.(\d{2})(\d{2})(\d{2})(\d{6})\.(\d+)\.log$")
+_PARTE = re.compile(r"\.\d+\.log$")
 
 
 def ordem_do_journal(caminho: str) -> str:
@@ -32,20 +33,35 @@ def ordem_do_journal(caminho: str) -> str:
     return ""
 
 
+def sessao_do_journal(caminho: str) -> str:
+    """Nome do journal sem a parte ".NN.log": as partes .01, .02 são uma sessão só."""
+    return _PARTE.sub("", os.path.basename(caminho))
+
+
 class LeitorExploracao:
     def __init__(self, historico: Historico, pasta: str | None = None):
         self._historico = historico
         self._pasta = os.path.expanduser(pasta or ed_parser.PASTA_JOURNAL_PADRAO)
         self._offsets: dict[str, int] = {}
 
-    def ciclo(self) -> None:
+    def ciclo(self) -> list[str]:
+        """Lê o que há de novo; devolve as mensagens de erro do ciclo.
+
+        Um arquivo ilegível ou um evento que quebra não impede o resto."""
+        erros: list[str] = []
         arquivos = glob.glob(os.path.join(self._pasta, "Journal.*.log"))
         arquivos.sort(key=lambda c: (ordem_do_journal(c), c))
         for caminho in arquivos:
-            self._ler(caminho)
+            try:
+                self._ler(caminho, erros)
+            except Exception as e:
+                erros.append(f"{os.path.basename(caminho)}: {e}")
+        return erros
 
-    def _ler(self, caminho: str) -> None:
+    def _ler(self, caminho: str, erros: list[str]) -> None:
         inicio = self._offsets.get(caminho, 0)
+        if os.path.getsize(caminho) == inicio:
+            return
         with open(caminho, "rb") as f:
             f.seek(inicio)
             dados = f.read()
@@ -53,23 +69,37 @@ class LeitorExploracao:
         if fim < 0:
             return
         self._offsets[caminho] = inicio + fim + 1
-        sessao = os.path.basename(caminho)
+        sessao = sessao_do_journal(caminho)
         for bruta in dados[: fim + 1].splitlines():
             try:
                 evento = json.loads(bruta.decode("utf-8"))
             except ValueError:  # inclui UnicodeDecodeError e JSONDecodeError
                 continue
-            if isinstance(evento, dict):
+            if not isinstance(evento, dict):
+                continue
+            try:
                 self._historico.consumir(evento, sessao)
+            except Exception as e:
+                erros.append(f"evento {evento.get('event')}: {e}")
 
 
 def _laco(leitor, historico, estado_cliente, intervalo, dormir=time.sleep) -> None:
+    # Cada mensagem distinta vai uma vez só para "Erros recentes": repetir a cada
+    # ciclo empurraria para fora os erros da colonização.
+    ja_reportados: set[str] = set()
     while True:
         try:
-            leitor.ciclo()
+            erros = list(leitor.ciclo() or [])
+        except Exception as e:
+            erros = [str(e)]
+        try:
             estado_cliente.registrar_exploracao(historico.resumo())
         except Exception as e:
-            estado_cliente.registrar_erro(f"exploração: {e}")
+            erros.append(str(e))
+        for mensagem in erros:
+            if mensagem not in ja_reportados:
+                ja_reportados.add(mensagem)
+                estado_cliente.registrar_erro(f"exploração: {mensagem}")
         dormir(intervalo)
 
 

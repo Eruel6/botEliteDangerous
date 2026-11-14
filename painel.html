@@ -198,6 +198,16 @@ function blocoExploracao(titulo, resumo, tabela, nota) {
   return b;
 }
 
+// As listas de vendidas e de primeiros vêm cortadas nas mais recentes.
+function cortada(mostrados, total) {
+  return total > mostrados ? `mostrando ${mostrados} de ${total}` : null;
+}
+
+function falhaExploracao() {
+  document.getElementById("exploracao").replaceChildren(
+    elemento("p", "não consegui ler a exploração", "vazio"));
+}
+
 function pintarExploracao(d) {
   const raiz = document.getElementById("exploracao");
   raiz.replaceChildren();
@@ -218,16 +228,19 @@ function pintarExploracao(d) {
     `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`));
 
   const v = d.vendido;
+  const qtdVendidas = v.quantidade ?? v.amostras.length;
   raiz.appendChild(blocoExploracao(
     "Vendido",
-    `Amostras: ${v.amostras.length}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
+    `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
     v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
       v.amostras.map(a => [
         a.especie, a.corpo, mi(a.valor),
         a.acertou === null || a.acertou === undefined ? "" :
           (a.acertou ? "previsão certa" : "previsão errada")])) : null,
-    d.perdido && d.perdido.amostras
-      ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null));
+    [cortada(v.amostras.length, qtdVendidas),
+     d.perdido && d.perdido.amostras
+       ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
+      .filter(Boolean).join(" · ") || null));
 
   const m = d.medias;
   raiz.appendChild(blocoExploracao(
@@ -239,7 +252,8 @@ function pintarExploracao(d) {
     "Primeiro a...",
     `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
     p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
-      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)])) : null));
+      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)])) : null,
+    cortada(p.corpos.length, p.total_corpos ?? p.corpos.length)));
 
   if (d.carreira) {
     const c = d.carreira;
@@ -253,7 +267,7 @@ async function atualizar() {
   try { pintar(await (await fetch("/estado.json")).json()); }
   catch (e) { document.getElementById("conexao").textContent = "painel sem resposta"; }
   try { pintarExploracao(await (await fetch("/exploracao.json")).json()); }
-  catch (e) { /* a aba de exploração falhar não afeta a de colonização */ }
+  catch (e) { falhaExploracao(); }   // fica só na aba de exploração; a colonização segue
 }
 atualizar();
 setInterval(atualizar, 5000);
