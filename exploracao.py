@@ -1,6 +1,8 @@
 # exploracao.py
 """Histórico de exploração lido do journal: primeiras descobertas e amostras de exobiologia."""
 
+import copy
+
 from precos_vista import Precos
 
 BONUS_PRIMEIRO_REGISTRO = 5
@@ -19,6 +21,9 @@ class Historico:
         # exploração a bordo: nome do sistema -> chaves de corpos escaneados
         self._exploracao = {}
         self._carreira = None
+        self._vendidas = []
+        self._exploracao_vendida = 0
+        self._perdido = {"amostras": 0, "sistemas": 0}
 
     def consumir(self, evento: dict, sessao: str) -> None:
         tratador = getattr(self, "_ao_" + str(evento.get("event")), None)
@@ -96,14 +101,79 @@ class Historico:
             "sessao": sessao,
         })
 
+    def _ao_SellOrganicData(self, ev, sessao):
+        for item in ev.get("BioData") or []:
+            self._vender(item, ev.get("timestamp", ""))
+
+    def _vender(self, item, quando):
+        bonus_pago = item.get("Bonus") or 0
+        especie_id = item.get("Species")
+        par = None
+        for i, a in enumerate(self._amostras):   # a lista está em ordem cronológica
+            if a["especie_id"] == especie_id:
+                par = self._amostras.pop(i)
+                break
+        previsao = par["bonus"] if par else None
+        acertou = None
+        if previsao is not None and previsao != "desconhecido":
+            acertou = (bonus_pago > 0) == (previsao == "provavel")
+        self._vendidas.append({
+            "especie": par["especie"] if par else (item.get("Species_Localised") or ""),
+            "variante": par["variante"] if par else (item.get("Variant_Localised") or ""),
+            "corpo": par["corpo"] if par else None,
+            "sistema": par["sistema"] if par else None,
+            "quando": quando,
+            "valor": (item.get("Value") or 0) + bonus_pago,
+            "bonus_pago": bonus_pago,
+            "previsao": previsao,
+            "acertou": acertou,
+            "sessao": par["sessao"] if par else None,
+        })
+
+    def _ao_SellExplorationData(self, ev, sessao):
+        self._exploracao_vendida += ev.get("TotalEarnings") or 0
+        for nome in ev.get("Systems") or []:
+            self._exploracao.pop(nome, None)
+
+    def _ao_MultiSellExplorationData(self, ev, sessao):
+        self._exploracao_vendida += ev.get("TotalEarnings") or 0
+        for d in ev.get("Discovered") or []:
+            self._exploracao.pop(d.get("SystemName"), None)
+
+    def _ao_Died(self, ev, sessao):
+        self._perdido["amostras"] += len(self._amostras)
+        self._perdido["sistemas"] += len(self._exploracao)
+        self._amostras = []
+        self._exploracao = {}
+
     def resumo(self) -> dict:
-        return {
+        return copy.deepcopy({
             "a_bordo": self._a_bordo(),
-            "vendido": {"amostras": [], "total": 0, "exploracao_total": 0},
-            "perdido": {"amostras": 0, "sistemas": 0},
-            "medias": {"por_amostra": None, "por_planeta": None, "por_sessao": None},
+            "vendido": {"amostras": self._vendidas,
+                        "total": sum(v["valor"] for v in self._vendidas),
+                        "exploracao_total": self._exploracao_vendida},
+            "perdido": self._perdido,
+            "medias": self._medias(),
             "primeiros": self._primeiros(),
             "carreira": self._carreira,
+        })
+
+    def _medias(self):
+        # (valor, corpo, sessao) de cada amostra a bordo com preço e de cada vendida
+        itens = [(a["valor_estimado"], (a["sistema"], a["corpo"]), a["sessao"])
+                 for a in self._amostras if a["valor_estimado"] is not None]
+        itens += [(v["valor"], (v["sistema"], v["corpo"]) if v["corpo"] else None, v["sessao"])
+                  for v in self._vendidas]
+
+        def media(pares):
+            pares = list(pares)
+            grupos = {g for _, g in pares}
+            return round(sum(v for v, _ in pares) / len(grupos)) if pares else None
+
+        return {
+            "por_amostra": round(sum(i[0] for i in itens) / len(itens)) if itens else None,
+            "por_planeta": media((v, c) for v, c, _ in itens if c is not None),
+            "por_sessao": media((v, s) for v, _, s in itens if s is not None),
         }
 
     def _a_bordo(self):

@@ -138,3 +138,191 @@ def test_resumo_ja_traz_campos_de_venda_e_morte_vazios():
 
 def test_evento_desconhecido_e_ignorado():
     historico_vazio().consumir({"event": "Music"}, SESSAO)
+
+
+# ---- Task 3: vendas, morte e médias ----
+
+ID_ACIES = "$Codex_Ent_Bacterial_04_Name;"
+ID_OUTRA = "$Codex_Ent_Bacterial_05_Name;"
+
+
+def analisa(h, especie="Bacterium Acies", especie_id=ID_ACIES, body=7, sessao=SESSAO,
+            quando="2026-11-14T11:00:00Z", pisado=False, sa=SA):
+    """Escaneia o corpo e registra uma Analyse."""
+    h.consumir(scan(body, pisado=pisado, sa=sa), sessao)
+    ev = organico("Analyse", body=body, especie=especie, quando=quando, sa=sa)
+    ev["Species"] = especie_id
+    h.consumir(ev, sessao)
+
+
+def historico_com_analyse(especie="Bacterium Acies", corpo_nao_pisado=True):
+    h = historico_vazio({"Bacterium Acies": 1_000_000, "Outra Especie": 500_000})
+    analisa(h, especie=especie, pisado=not corpo_nao_pisado)
+    return h
+
+
+def item_venda(especie_id, especie, valor, bonus):
+    return {"Genus": "$Codex_Ent_Bacterial_Genus_Name;", "Species": especie_id,
+            "Species_Localised": especie, "Variant": "$x;",
+            "Variant_Localised": f"{especie} - Verde",
+            "Value": valor, "Bonus": bonus}
+
+
+def venda_organica(itens, quando="2026-11-14T15:00:00Z"):
+    return {"timestamp": quando, "event": "SellOrganicData",
+            "BioData": [item_venda(i, e, v, b) for i, e, v, b in itens]}
+
+
+def test_venda_tira_a_amostra_de_bordo_e_registra_o_valor_real():
+    h = historico_com_analyse("Bacterium Acies", corpo_nao_pisado=True)
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), "s2")
+    r = h.resumo()
+    assert r["a_bordo"]["amostras"] == []
+    [v] = r["vendido"]["amostras"]
+    assert (v["valor"], v["bonus_pago"], v["previsao"], v["acertou"]) == (5_000_000, 4_000_000, "provavel", True)
+    assert v["quando"] == "2026-11-14T15:00:00Z"
+    assert v["sessao"] == SESSAO
+    assert v["corpo"] == "Sis 7" and v["sistema"] == "Sis"
+    assert r["vendido"]["total"] == 5_000_000
+
+
+def test_venda_erra_a_previsao_quando_nao_houve_bonus():
+    h = historico_com_analyse(corpo_nao_pisado=True)
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), SESSAO)
+    [v] = h.resumo()["vendido"]["amostras"]
+    assert (v["previsao"], v["acertou"]) == ("provavel", False)
+
+
+def test_previsao_desconhecida_nao_tem_acerto():
+    h = historico_vazio()
+    h.consumir(organico("Analyse", body=99), SESSAO)   # corpo sem Scan -> desconhecido
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), SESSAO)
+    [v] = h.resumo()["vendido"]["amostras"]
+    assert (v["previsao"], v["acertou"]) == ("desconhecido", None)
+
+
+def test_venda_casa_pela_amostra_mais_antiga_da_mesma_especie():
+    h = historico_vazio({"Bacterium Acies": 1_000_000, "Outra Especie": 500_000})
+    analisa(h, body=1, quando="2026-11-14T10:00:00Z")
+    analisa(h, especie="Outra Especie", especie_id=ID_OUTRA, body=2, quando="2026-11-14T10:30:00Z")
+    analisa(h, body=3, quando="2026-11-14T11:00:00Z")
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
+    r = h.resumo()
+    [v] = r["vendido"]["amostras"]
+    assert v["corpo"] == "Sis 1"
+    restantes = [(a["especie"], a["corpo"]) for a in r["a_bordo"]["amostras"]]
+    assert restantes == [("Outra Especie", "Sis 2"), ("Bacterium Acies", "Sis 3")]
+
+
+def test_venda_sem_par_entra_sem_planeta():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
+    r = h.resumo()
+    [v] = r["vendido"]["amostras"]
+    assert v["especie"] == "Bacterium Acies"
+    assert v["variante"] == "Bacterium Acies - Verde"
+    assert v["corpo"] is None and v["sistema"] is None
+    assert v["previsao"] is None and v["acertou"] is None and v["sessao"] is None
+    assert r["vendido"]["total"] == 5_000_000
+
+
+def test_venda_sem_par_e_sem_variante_localizada():
+    h = historico_vazio()
+    ev = venda_organica([(ID_ACIES, "Bacterium Acies", 1, 0)])
+    del ev["BioData"][0]["Variant_Localised"]
+    h.consumir(ev, SESSAO)
+    assert h.resumo()["vendido"]["amostras"][0]["variante"] == ""
+
+
+def test_morte_perde_amostras_e_dados_de_exploracao_a_bordo():
+    h = historico_vazio()
+    analisa(h, body=1)
+    analisa(h, body=2)
+    h.consumir(scan(1, sistema="Outro", sa=222), SESSAO)
+    h.consumir({"timestamp": "2026-11-14T16:00:00Z", "event": "Died"}, SESSAO)
+    r = h.resumo()
+    assert r["perdido"] == {"amostras": 2, "sistemas": 2}
+    assert r["a_bordo"]["amostras"] == []
+    assert r["a_bordo"]["sistemas_exploracao"] == 0
+    assert r["a_bordo"]["corpos_exploracao"] == 0
+    h.consumir({"timestamp": "2026-11-14T16:05:00Z", "event": "Died"}, SESSAO)
+    assert h.resumo()["perdido"] == {"amostras": 2, "sistemas": 2}
+
+
+def test_venda_de_exploracao_tira_os_sistemas_de_bordo_e_soma_o_total():
+    h = historico_vazio()
+    h.consumir(scan(1, sistema="A", sa=1), SESSAO)
+    h.consumir(scan(1, sistema="B", sa=2), SESSAO)
+    h.consumir(scan(1, sistema="C", sa=3), SESSAO)
+    h.consumir({"timestamp": "t", "event": "SellExplorationData", "Systems": ["A"],
+                "Discovered": 1, "BaseValue": 10, "Bonus": 0, "TotalEarnings": 12_345}, SESSAO)
+    r = h.resumo()
+    assert r["a_bordo"]["sistemas_exploracao"] == 2
+    assert r["vendido"]["exploracao_total"] == 12_345
+    h.consumir({"timestamp": "t", "event": "MultiSellExplorationData",
+                "Discovered": [{"SystemName": "B", "NumBodies": 1}], "TotalEarnings": 1_000}, SESSAO)
+    r = h.resumo()
+    assert r["a_bordo"]["sistemas_exploracao"] == 1
+    assert r["vendido"]["exploracao_total"] == 13_345
+
+
+def test_medias_ignoram_perdidas_e_amostras_sem_preco():
+    h = historico_vazio({"Bacterium Acies": 1_000_000})
+    analisa(h, body=1, sessao="s1")                                         # 5M estimados
+    analisa(h, especie="Sem Preco", especie_id="$x;", body=2, sessao="s1")  # sem valor: fora
+    analisa(h, body=3, sessao="s2", pisado=True)                            # 1M estimado
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), "s2")
+    # a venda leva a mais antiga (Sis 1, sessão s1) por 1M reais; a bordo fica Sis 3 (1M, s2)
+    m = h.resumo()["medias"]
+    assert m["por_amostra"] == 1_000_000
+    assert m["por_planeta"] == 1_000_000
+    assert m["por_sessao"] == 1_000_000
+
+
+def test_medias_por_planeta_e_sessao_agrupam_corretamente():
+    h = historico_vazio()
+    analisa(h, body=1, sessao="s1")                  # 5M, planeta 1, s1
+    analisa(h, body=1, sessao="s1")                  # 5M, mesmo planeta e sessão
+    analisa(h, body=2, sessao="s2", pisado=True)     # 1M, planeta 2, s2
+    m = h.resumo()["medias"]
+    assert m["por_amostra"] == round(11_000_000 / 3)
+    assert m["por_planeta"] == 5_500_000    # 11M / 2 planetas
+    assert m["por_sessao"] == 5_500_000     # 11M / 2 sessões
+
+
+def test_medias_com_vendida_sem_par_entram_so_em_por_amostra():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), SESSAO)
+    m = h.resumo()["medias"]
+    assert m["por_amostra"] == 1_000_000
+    assert m["por_planeta"] is None and m["por_sessao"] is None
+
+
+def test_medias_sem_dados_sao_none():
+    h = historico_vazio()
+    assert h.resumo()["medias"] == {"por_amostra": None, "por_planeta": None, "por_sessao": None}
+
+
+def test_morte_nao_entra_nas_medias():
+    h = historico_vazio()
+    analisa(h, body=1)
+    h.consumir({"timestamp": "t", "event": "Died"}, SESSAO)
+    assert h.resumo()["medias"]["por_amostra"] is None
+
+
+def test_resumo_devolve_copias_e_mutar_nao_corrompe_o_historico():
+    h = historico_vazio()
+    analisa(h, body=1)
+    h.consumir({"timestamp": "t", "event": "Statistics", "Exobiology": {"Organic_Genus_Encountered": 3}}, SESSAO)
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1, 0)]), SESSAO)
+    analisa(h, body=2)
+    r = h.resumo()
+    r["a_bordo"]["amostras"][0]["especie"] = "CORROMPIDO"
+    r["a_bordo"]["amostras"].append({"x": 1})
+    r["vendido"]["amostras"][0]["valor"] = -1
+    r["carreira"]["Organic_Genus_Encountered"] = 999
+    r2 = h.resumo()
+    assert r2["a_bordo"]["amostras"][0]["especie"] == "Bacterium Acies"
+    assert len(r2["a_bordo"]["amostras"]) == 1
+    assert r2["vendido"]["amostras"][0]["valor"] == 1
+    assert r2["carreira"]["Organic_Genus_Encountered"] == 3
