@@ -20,11 +20,22 @@
   th { color: #9a8b76; font-weight: normal; font-size: 11px; text-transform: uppercase; }
   .erro { color: #e05c5c; }
   .vazio { color: #6b5d4c; font-style: italic; }
+  .abas { display: flex; gap: 8px; margin-bottom: 20px; }
+  .aba { background: #1e1813; color: #9a8b76; border: 1px solid #3a2f24; border-radius: 6px;
+         padding: 6px 14px; font: inherit; cursor: pointer; }
+  .aba.ativa { color: #ff8c1a; border-color: #ff8c1a; }
+  .bloco-titulo { font-size: 13px; color: #9a8b76; text-transform: uppercase; margin: 20px 0 6px; }
 </style>
 </head>
 <body>
 <h1>Cliente Elite Dangerous</h1>
 
+<div class="abas">
+  <button class="aba ativa" id="botao-colonizacao" onclick="mostrarAba('colonizacao')">Colonização</button>
+  <button class="aba" id="botao-exploracao" onclick="mostrarAba('exploracao')">Exploração</button>
+</div>
+
+<div id="aba-colonizacao">
 <div class="cartoes">
   <div class="cartao"><div class="rotulo">Conexão</div><div class="valor" id="conexao">—</div></div>
   <div class="cartao"><div class="rotulo">Último envio aceito</div><div class="valor" id="envio">—</div></div>
@@ -44,6 +55,11 @@
 
 <h2 style="font-size:13px;color:#9a8b76;text-transform:uppercase">Erros recentes</h2>
 <table><thead><tr><th>Quando</th><th>O quê</th></tr></thead><tbody id="erros"></tbody></table>
+</div>
+
+<div id="aba-exploracao" style="display:none">
+  <div id="exploracao"><p class="vazio">lendo os journals…</p></div>
+</div>
 
 <script>
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
@@ -140,9 +156,104 @@ function pintar(d) {
   }
 }
 
+function mostrarAba(nome) {
+  for (const aba of ["colonizacao", "exploracao"]) {
+    document.getElementById("aba-" + aba).style.display = aba === nome ? "" : "none";
+    document.getElementById("botao-" + aba).className = aba === nome ? "aba ativa" : "aba";
+  }
+}
+
+// Créditos em milhões com uma casa e vírgula decimal: 5000000 -> "5,0 mi".
+function mi(n) {
+  return n === null || n === undefined ? "—" : (n / 1e6).toFixed(1).replace(".", ",") + " mi";
+}
+const ROTULO_BONUS = { provavel: "provável", desconhecido: "desconhecido", improvavel: "improvável" };
+
+function elemento(tag, texto, classe) {
+  const el = document.createElement(tag);
+  if (texto !== undefined) el.textContent = texto;
+  if (classe) el.className = classe;
+  return el;
+}
+
+function tabelaTexto(cabecalho, linhas) {
+  const t = elemento("table");
+  const cab = elemento("tr");
+  for (const c of cabecalho) cab.appendChild(elemento("th", c));
+  t.appendChild(cab);
+  for (const linha of linhas) {
+    const tr = elemento("tr");
+    for (const c of linha) tr.appendChild(elemento("td", c));
+    t.appendChild(tr);
+  }
+  return t;
+}
+
+function blocoExploracao(titulo, resumo, tabela, nota) {
+  const b = elemento("div");
+  b.appendChild(elemento("div", titulo, "bloco-titulo"));
+  b.appendChild(elemento("div", resumo));
+  if (tabela) b.appendChild(tabela);
+  if (nota) b.appendChild(elemento("div", nota, "vazio"));
+  return b;
+}
+
+function pintarExploracao(d) {
+  const raiz = document.getElementById("exploracao");
+  raiz.replaceChildren();
+  if (d.carregando) {
+    raiz.appendChild(elemento("p", "lendo os journals…", "vazio"));
+    return;
+  }
+  const marca = (v) => v ? "✓" : "";
+
+  const ab = d.a_bordo;
+  raiz.appendChild(blocoExploracao(
+    "A bordo (perde-se se morrer)",
+    `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
+    ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
+      ab.amostras.map(a => [
+        a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
+        a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus])) : null,
+    `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`));
+
+  const v = d.vendido;
+  raiz.appendChild(blocoExploracao(
+    "Vendido",
+    `Amostras: ${v.amostras.length}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
+    v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
+      v.amostras.map(a => [
+        a.especie, a.corpo, mi(a.valor),
+        a.acertou === null || a.acertou === undefined ? "" :
+          (a.acertou ? "previsão certa" : "previsão errada")])) : null,
+    d.perdido && d.perdido.amostras
+      ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null));
+
+  const m = d.medias;
+  raiz.appendChild(blocoExploracao(
+    "Médias (coletado)",
+    `Por amostra: ${mi(m.por_amostra)}   Por planeta com coleta: ${mi(m.por_planeta)}   Por sessão (journal): ${mi(m.por_sessao)}`));
+
+  const p = d.primeiros;
+  raiz.appendChild(blocoExploracao(
+    "Primeiro a...",
+    `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
+    p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
+      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)])) : null));
+
+  if (d.carreira) {
+    const c = d.carreira;
+    raiz.appendChild(blocoExploracao(
+      "Carreira (dados do próprio jogo, evento Statistics)",
+      `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)} · ${c.First_Logged || 0} primeiras descobertas`));
+  }
+}
+
 async function atualizar() {
   try { pintar(await (await fetch("/estado.json")).json()); }
   catch (e) { document.getElementById("conexao").textContent = "painel sem resposta"; }
+  try { pintarExploracao(await (await fetch("/exploracao.json")).json()); }
+  catch (e) { /* a aba de exploração falhar não afeta a de colonização */ }
 }
 atualizar();
 setInterval(atualizar, 5000);

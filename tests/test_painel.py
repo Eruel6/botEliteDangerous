@@ -415,3 +415,120 @@ function coletarDados(elem, depth = 0) {
         pytest.fail(f"Erro teste 5: {result.stderr}")
 
     assert "dados de 14:32" in result.stdout, f"Teste 5 - hora do dado antigo ausente: {result.stdout}"
+
+
+def test_exploracao_json_devolve_o_estado_de_exploracao(servidor_no_ar):
+    base, _ = servidor_no_ar
+
+    status, corpo = buscar(f"{base}/exploracao.json")
+
+    assert status == 200
+    assert json.loads(corpo) == {"carregando": True}
+
+
+def test_a_pagina_tem_as_duas_abas():
+    with open(os.path.join(RAIZ, "painel.html"), encoding="utf-8") as f:
+        html = f.read()
+
+    assert "Colonização" in html
+    assert "Exploração" in html
+    assert "function pintarExploracao" in html
+
+
+NODE_STUB_EXPLORACAO = """
+const elements = {};
+function novo(tag) {
+  return {
+    tag: tag, children: [], textContent: undefined, className: undefined, style: {},
+    replaceChildren() { this.children = []; },
+    appendChild(c) { this.children.push(c); },
+  };
+}
+const document = {
+  getElementById(id) { return elements[id] || (elements[id] = novo(id)); },
+  createElement: novo,
+};
+function textos(el) {
+  let r = [];
+  if (el.textContent) r.push(el.textContent);
+  for (const c of el.children || []) r = r.concat(textos(c));
+  return r;
+}
+"""
+
+
+def _rodar_pintar_exploracao(dados):
+    node_bin = shutil.which("node") or shutil.which("nodejs")
+    if not node_bin:
+        pytest.skip("node não encontrado")
+    with open(os.path.join(RAIZ, "painel.html"), encoding="utf-8") as f:
+        html = f.read()
+    script = re.search(r"<script>(.*?)</script>", html, re.DOTALL).group(1)
+    script = script.split("async function atualizar")[0]
+    programa = (NODE_STUB_EXPLORACAO + script +
+                f"pintarExploracao({json.dumps(dados)});\n"
+                "console.log(textos(elements['exploracao']).join('|'));\n")
+    r = subprocess.run([node_bin], input=programa, capture_output=True,
+                       text=True, timeout=5)
+    assert r.returncode == 0, r.stderr
+    return r.stdout
+
+
+def test_pintar_exploracao_renderiza_amostra_a_bordo_e_primeiros():
+    amostra = {"especie": "Bacterium Acies", "especie_id": "x", "variante": "Água-marinha",
+               "corpo": "Plio Eurl IX-Z b14-0 B 1", "sistema": "Plio Eurl IX-Z b14-0",
+               "quando": "2026-11-14T10:00:00Z", "preco_base": 5_000_000,
+               "bonus": "provavel", "valor_estimado": 20_000_000, "sessao": 1}
+    dados = {
+        "carregando": False,
+        "a_bordo": {"amostras": [amostra], "total_base": 5_000_000,
+                    "total_com_bonus": 20_000_000, "sistemas_exploracao": 1,
+                    "corpos_exploracao": 3},
+        "vendido": {"amostras": [], "total": 0, "exploracao_total": 0},
+        "perdido": {"amostras": 0, "sistemas": 0},
+        "medias": {"por_amostra": 5_000_000, "por_planeta": None, "por_sessao": None},
+        "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 1,
+                      "mapeados": 1, "pisados": 1,
+                      "corpos": [{"corpo": "Plio Eurl IX-Z b14-0 B 1",
+                                  "sistema": "Plio Eurl IX-Z b14-0",
+                                  "descobriu": True, "mapeou": True, "pisou": True}]},
+        "carreira": None,
+    }
+
+    saida = _rodar_pintar_exploracao(dados)
+
+    assert "Bacterium Acies" in saida
+    assert "provável" in saida
+    assert "5,0 mi" in saida
+    assert "Plio Eurl IX-Z b14-0 B 1" in saida
+
+
+def test_pintar_exploracao_mostra_previsao_da_venda_e_a_carreira():
+    dados = {
+        "carregando": False,
+        "a_bordo": {"amostras": [], "total_base": 0, "total_com_bonus": 0,
+                    "sistemas_exploracao": 0, "corpos_exploracao": 0},
+        "vendido": {"amostras": [
+            {"especie": "Aleoida Arcus", "variante": "v", "corpo": "A 1", "sistema": "A",
+             "quando": "2026-11-14T10:00:00Z", "valor": 7_000_000, "bonus_pago": False,
+             "previsao": "provavel", "acertou": False, "sessao": 1}],
+            "total": 7_000_000, "exploracao_total": 0},
+        "perdido": {"amostras": 0, "sistemas": 0},
+        "medias": {"por_amostra": None, "por_planeta": None, "por_sessao": None},
+        "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 0,
+                      "mapeados": 0, "pisados": 0, "corpos": []},
+        "carreira": {"Organic_Data": 27, "Organic_Data_Profits": 439_500_000,
+                     "First_Logged": 25},
+    }
+
+    saida = _rodar_pintar_exploracao(dados)
+
+    assert "Aleoida Arcus" in saida
+    assert "previsão errada" in saida
+    assert "439,5 mi" in saida
+
+
+def test_pintar_exploracao_mostra_carregando():
+    saida = _rodar_pintar_exploracao({"carregando": True})
+
+    assert "lendo os journals" in saida

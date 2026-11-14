@@ -88,3 +88,72 @@ def test_config_valida_sobe_o_painel_e_roda_o_monitor(monkeypatch):
 
     assert codigo == 0
     assert chamado["config"] is config_falsa
+
+
+def test_config_invalida_ainda_inicia_a_exploracao(monkeypatch, capsys):
+    entregues = {}
+
+    def iniciar_painel_falso(estado_cliente, **kwargs):
+        entregues["painel"] = estado_cliente
+        return ("srv", 9999)
+
+    monkeypatch.setattr(cliente.painel, "iniciar_painel", iniciar_painel_falso)
+
+    def carregar_falhando(caminho="config.txt"):
+        raise config_cliente.ConfigInvalida("Faltou API_TOKEN.")
+
+    monkeypatch.setattr(cliente.config_cliente, "carregar_config", carregar_falhando)
+
+    def interromper():
+        raise KeyboardInterrupt
+
+    def falso(estado_cliente):
+        entregues["exploracao"] = estado_cliente
+
+    cliente.main(aguardar=interromper, iniciar_exploracao=falso)
+
+    assert entregues["exploracao"] is entregues["painel"]
+
+
+def test_config_valida_tambem_inicia_a_exploracao(monkeypatch):
+    entregues = {}
+    monkeypatch.setattr(
+        cliente.painel, "iniciar_painel", lambda estado_cliente, **kw: ("srv", 8765)
+    )
+    monkeypatch.setattr(cliente.webbrowser, "open", lambda url: None)
+    config_falsa = config_cliente.Config(api_token="tok", api_url="https://x/logdata")
+    monkeypatch.setattr(cliente.config_cliente, "carregar_config", lambda: config_falsa)
+
+    def rodar_falso(config, estado_cliente):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cliente.monitor, "rodar", rodar_falso)
+
+    cliente.main(iniciar_exploracao=lambda e: entregues.setdefault("estado", e))
+
+    assert "estado" in entregues
+
+
+def test_falha_ao_iniciar_a_exploracao_e_registrada_e_o_cliente_segue(monkeypatch):
+    monkeypatch.setattr(
+        cliente.painel, "iniciar_painel", lambda estado_cliente, **kw: ("srv", 8765)
+    )
+    monkeypatch.setattr(cliente.webbrowser, "open", lambda url: None)
+    config_falsa = config_cliente.Config(api_token="tok", api_url="https://x/logdata")
+    monkeypatch.setattr(cliente.config_cliente, "carregar_config", lambda: config_falsa)
+    visto = {}
+
+    def rodar_falso(config, estado_cliente):
+        visto["estado"] = estado_cliente
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(cliente.monitor, "rodar", rodar_falso)
+
+    def quebrado(estado_cliente):
+        raise RuntimeError("pasta ilegível")
+
+    codigo = cliente.main(iniciar_exploracao=quebrado)
+
+    assert codigo == 0
+    erros = visto["estado"].como_dicionario()["erros"]
+    assert any("exploração: pasta ilegível" in e["mensagem"] for e in erros)

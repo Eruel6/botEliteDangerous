@@ -6,6 +6,7 @@ import webbrowser
 
 import config_cliente
 import estado
+import leitor_exploracao
 import monitor
 import painel
 
@@ -18,7 +19,16 @@ def _aguardar_ate_interromper():
         time.sleep(INTERVALO_ESPERA_OCIOSA_SEGUNDOS)
 
 
-def main(aguardar=_aguardar_ate_interromper):
+def _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente):
+    """A aba de exploração é um extra: se não subir, a colonização segue."""
+    try:
+        iniciar_exploracao(estado_cliente)
+    except Exception as e:
+        estado_cliente.registrar_erro(f"exploração: {e}")
+
+
+def main(aguardar=_aguardar_ate_interromper,
+         iniciar_exploracao=leitor_exploracao.iniciar_thread):
     estado_cliente = estado.EstadoCliente()
 
     try:
@@ -29,6 +39,7 @@ def main(aguardar=_aguardar_ate_interromper):
         # colar o token no config.txt e não entender por que nada aparece.
         estado_cliente.registrar_erro(str(e))
         _, porta = painel.iniciar_painel(estado_cliente)
+        _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente)
         url = f"http://127.0.0.1:{porta}"
 
         print(f"\n[CONFIGURAÇÃO] {e}")
@@ -42,6 +53,7 @@ def main(aguardar=_aguardar_ate_interromper):
         return 1
 
     _, porta = painel.iniciar_painel(estado_cliente)
+    _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente)
     url = f"http://127.0.0.1:{porta}"
 
     print(f"Painel em {url}")
