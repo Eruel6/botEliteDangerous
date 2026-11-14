@@ -3,11 +3,22 @@
 import os
 import sys
 
+import pytest
+
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 
 import cliente
 import config_cliente
+
+
+@pytest.fixture(autouse=True)
+def _sem_leitor_de_exploracao_real(monkeypatch):
+    """Sem isto, main() sem injeção sobe a thread real lendo o disco da máquina."""
+    chamadas = []
+    monkeypatch.setattr(cliente.leitor_exploracao, "iniciar_thread",
+                        lambda estado_cliente, *a, **kw: chamadas.append(estado_cliente))
+    return chamadas
 
 
 def test_config_invalida_sobe_o_painel_registra_o_erro_e_devolve_1(monkeypatch, capsys):
@@ -157,3 +168,19 @@ def test_falha_ao_iniciar_a_exploracao_e_registrada_e_o_cliente_segue(monkeypatc
     assert codigo == 0
     erros = visto["estado"].como_dicionario()["erros"]
     assert any("exploração: pasta ilegível" in e["mensagem"] for e in erros)
+
+
+def test_sem_injecao_main_usa_o_leitor_do_modulo(monkeypatch, _sem_leitor_de_exploracao_real):
+    monkeypatch.setattr(cliente.painel, "iniciar_painel", lambda e, **kw: ("srv", 1))
+
+    def carregar_falhando(caminho="config.txt"):
+        raise config_cliente.ConfigInvalida("x")
+
+    monkeypatch.setattr(cliente.config_cliente, "carregar_config", carregar_falhando)
+
+    def interromper():
+        raise KeyboardInterrupt
+
+    cliente.main(aguardar=interromper)
+
+    assert len(_sem_leitor_de_exploracao_real) == 1

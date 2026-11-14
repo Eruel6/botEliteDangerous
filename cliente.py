@@ -28,7 +28,10 @@ def _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente):
 
 
 def main(aguardar=_aguardar_ate_interromper,
-         iniciar_exploracao=leitor_exploracao.iniciar_thread):
+         iniciar_exploracao=None):
+    if iniciar_exploracao is None:
+        # Resolvido na chamada (não na definição) para os testes poderem trocar.
+        iniciar_exploracao = leitor_exploracao.iniciar_thread
     estado_cliente = estado.EstadoCliente()
 
     try:
