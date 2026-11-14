@@ -6,7 +6,6 @@ import webbrowser
 
 import config_cliente
 import estado
-import leitor_exploracao
 import monitor
 import painel
 
@@ -20,8 +19,14 @@ def _aguardar_ate_interromper():
 
 
 def _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente):
-    """A aba de exploração é um extra: se não subir, a colonização segue."""
+    """A aba de exploração é um extra: se não subir, a colonização segue.
+
+    O import é feito aqui, e não no topo, para que um zip sem os arquivos da
+    exploração (ou sem precos_vista.json) vire só um erro no painel."""
     try:
+        if iniciar_exploracao is None:
+            import leitor_exploracao
+            iniciar_exploracao = leitor_exploracao.iniciar_thread
         iniciar_exploracao(estado_cliente)
     except Exception as e:
         estado_cliente.registrar_erro(f"exploração: {e}")
@@ -29,9 +34,6 @@ def _iniciar_exploracao_sem_derrubar(iniciar_exploracao, estado_cliente):
 
 def main(aguardar=_aguardar_ate_interromper,
          iniciar_exploracao=None):
-    if iniciar_exploracao is None:
-        # Resolvido na chamada (não na definição) para os testes poderem trocar.
-        iniciar_exploracao = leitor_exploracao.iniciar_thread
     estado_cliente = estado.EstadoCliente()
 
     try:
