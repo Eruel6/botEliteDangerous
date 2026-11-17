@@ -84,7 +84,7 @@ aparecer um real.
 
 O Arthur escolheu A.
 
-**Preços:** tabela salva no projeto (escolha do Claude, aceita na conversa), e
+**Preços:** tabela salva no projeto (escolha aceita na conversa), e
 não buscada na hora: os valores quase não mudam e a aba não deve depender de
 site de terceiro no ar.
 

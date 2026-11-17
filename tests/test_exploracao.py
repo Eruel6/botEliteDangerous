@@ -130,7 +130,8 @@ def test_exploracao_a_bordo_conta_sistemas_e_corpos_escaneados():
 
 def test_resumo_ja_traz_campos_de_venda_e_morte_vazios():
     r = historico_vazio().resumo()
-    assert r["vendido"] == {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0}
+    assert r["vendido"] == {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0,
+                          "multiplicador_observado": None}
     assert r["perdido"] == {"amostras": 0, "sistemas": 0}
     assert r["medias"] == {"por_amostra": None, "por_planeta": None, "por_sessao": None}
     assert r["carreira"] is None
@@ -468,3 +469,117 @@ def test_previsao_improvavel_com_bonus_pago_erra():
     h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
     [v] = h.resumo()["vendido"]["amostras"]
     assert (v["previsao"], v["acertou"]) == ("improvavel", False)
+
+
+# ---- Cards, modais e tabela de preços ----
+
+def test_a_bordo_soma_so_as_provaveis_com_e_sem_multiplicador():
+    h = historico_vazio({"Bacterium Acies": 1_000_000, "Outra Especie": 500_000})
+    analisa(h, body=1)                                   # provável
+    analisa(h, body=2, especie="Outra Especie", especie_id=ID_OUTRA, pisado=True)  # improvável
+    ab = h.resumo()["a_bordo"]
+    assert (ab["provaveis_quantidade"], ab["provaveis_base"], ab["provaveis_com_bonus"]) == (1, 1_000_000, 5_000_000)
+    assert ab["total_base"] == 1_500_000                 # inalterado
+
+
+def test_provavel_sem_preco_conta_mas_fica_fora_das_somas():
+    h = historico_vazio()
+    analisa(h, body=1, especie="Especie Nova")
+    analisa(h, body=2)
+    ab = h.resumo()["a_bordo"]
+    assert (ab["provaveis_quantidade"], ab["provaveis_base"], ab["provaveis_com_bonus"]) == (2, 1_000_000, 5_000_000)
+
+
+def test_multiplicador_observado_ausente_sem_venda_com_bonus():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), SESSAO)
+    assert h.resumo()["vendido"]["multiplicador_observado"] is None
+
+
+def test_multiplicador_observado_e_a_media_das_vendas_com_bonus():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000),
+                               (ID_OUTRA, "Outra", 1_000_000, 1_000_000),
+                               (ID_OUTRA, "Outra", 0, 3_000_000)]), SESSAO)   # Value 0 ignorado
+    assert h.resumo()["vendido"]["multiplicador_observado"] == 3.5
+
+
+def test_resumo_traz_precos_com_bonus_e_o_multiplicador():
+    r = historico_vazio({"Bacterium Acies": 1_000_000, "Aleoida Gravis": 2_000_000}).resumo()
+    assert r["multiplicador"] == 5
+    assert r["precos"] == [{"especie": "Aleoida Gravis", "base": 2_000_000, "com_bonus": 10_000_000,
+                         "genero": None},
+                           {"especie": "Bacterium Acies", "base": 1_000_000, "com_bonus": 5_000_000,
+                         "genero": None}]
+    assert r["precos_atualizado_em"] is None
+
+
+def test_resumo_traz_generos_e_genero_nos_itens():
+    import generos_exobio
+    info = {"wiki": "Bacterium", "distancia_m": 500, "fonte_distancia": "comunidade", "descricao": "x"}
+    h = exploracao.Historico(precos_vista.Precos({"Bacterium Acies": 1_000_000}),
+                             generos_exobio.Generos({"Bacterium": info}))
+    analisa(h)
+    r = h.resumo()
+    assert r["generos"] == {"Bacterium": info}
+    assert r["precos"][0]["genero"] == "Bacterium"
+    assert r["a_bordo"]["amostras"][0]["genero"] == "Bacterium"
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
+    assert h.resumo()["vendido"]["amostras"][0]["genero"] == "Bacterium"
+
+
+def test_sem_generos_resumo_fica_vazio():
+    h = historico_com_analyse()
+    r = h.resumo()
+    assert r["generos"] == {}
+    assert r["precos"][0]["genero"] is None
+    assert r["a_bordo"]["amostras"][0]["genero"] is None
+
+
+def test_sessoes_somam_por_sessao_de_coleta():
+    h = historico_vazio()
+    analisa(h, sessao="s1", quando="2026-11-14T11:00:00Z")
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), "s2")
+    sessoes = h.resumo()["sessoes"]
+    assert sessoes == [{"sessao": "s1", "quando": "2026-11-14T11:00:00Z",
+                        "vendido": 5_000_000, "a_bordo": 0}]
+
+
+def test_sessoes_separam_a_bordo_de_vendido():
+    h = historico_vazio({"Bacterium Acies": 1_000_000, "Outra Especie": 500_000})
+    analisa(h, sessao="s1", quando="2026-11-14T11:00:00Z")
+    analisa(h, especie="Outra Especie", especie_id=ID_OUTRA, body=8, sessao="s1",
+            quando="2026-11-14T12:00:00Z")
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), "s2")
+    r = h.resumo()
+    [s] = r["sessoes"]
+    assert s["quando"] == "2026-11-14T11:00:00Z"
+    assert s["vendido"] == 1_000_000
+    assert s["a_bordo"] == sum(a["valor_estimado"] for a in r["a_bordo"]["amostras"]) > 0
+
+
+def test_venda_sem_par_fica_fora_das_sessoes():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), "s2")
+    r = h.resumo()
+    assert r["vendido"]["quantidade"] == 1
+    assert r["vendido"]["amostras"][0]["coletada_em"] is None
+    assert r["sessoes"] == []
+
+
+def test_sessoes_cortam_nas_20_mais_recentes_em_ordem():
+    h = historico_vazio()
+    for i in range(25):
+        analisa(h, body=7 + i, sessao=f"s{i:02d}", quando=f"2026-11-{i + 1:02d}T11:00:00Z")
+    sessoes = h.resumo()["sessoes"]
+    assert [s["sessao"] for s in sessoes] == [f"s{i:02d}" for i in range(5, 25)]
+    assert [s["quando"] for s in sessoes] == sorted(s["quando"] for s in sessoes)
+
+
+def test_amostra_sem_preco_nao_soma_mas_sessao_aparece():
+    h = historico_vazio({"Outra Especie": 500_000})
+    analisa(h, sessao="s1")
+    r = h.resumo()
+    assert r["a_bordo"]["amostras"][0]["valor_estimado"] is None
+    assert r["sessoes"] == [{"sessao": "s1", "quando": "2026-11-14T11:00:00Z",
+                             "vendido": 0, "a_bordo": 0}]

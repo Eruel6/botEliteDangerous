@@ -36,7 +36,10 @@ def normalizar(nome: str) -> str:
 
 
 class Precos:
-    def __init__(self, especies: dict[str, int], apelidos: dict[str, str] | None = None):
+    def __init__(self, especies: dict[str, int], apelidos: dict[str, str] | None = None,
+                 atualizado_em: str | None = None):
+        self._originais = dict(especies)
+        self.atualizado_em = atualizado_em
         self._especies = {normalizar(n): v for n, v in especies.items()}
         self._apelidos = {normalizar(a): normalizar(n) for a, n in (apelidos or {}).items()}
 
@@ -45,8 +48,12 @@ class Precos:
         chave = self._apelidos.get(chave, chave)
         return self._especies.get(chave)
 
+    def lista(self) -> list[tuple[str, int]]:
+        """(nome como no JSON, preço), do mais caro ao mais barato; empate por nome."""
+        return sorted(self._originais.items(), key=lambda par: (-par[1], par[0]))
+
 
 def carregar_precos(caminho: str = CAMINHO_PADRAO) -> Precos:
     with open(caminho, encoding="utf-8") as f:
         dados = json.load(f)
-    return Precos(dados["especies"], dados.get("apelidos"))
+    return Precos(dados["especies"], dados.get("apelidos"), dados.get("atualizado_em"))

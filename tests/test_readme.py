@@ -7,7 +7,7 @@ import re
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Arquivos que não são import mas o cliente lê em tempo de execução.
-DADOS_DO_CLIENTE = {"painel.html", "precos_vista.json", "config.exemplo.txt", "iniciar.bat"}
+DADOS_DO_CLIENTE = {"painel.html", "precos_vista.json", "generos_exobio.json", "config.exemplo.txt", "iniciar.bat"}
 
 
 def lista_do_zip():

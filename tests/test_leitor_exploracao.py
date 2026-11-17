@@ -229,3 +229,15 @@ def test_laco_nao_repete_o_mesmo_erro_de_ciclo():
     with pytest.raises(Parar):
         leitor_exploracao._laco(Quebrado(), HistoricoFalso(), e, 1, dormir)
     assert len(e.como_dicionario()["erros"]) == 1
+
+
+def test_iniciar_thread_sem_fichas_dos_generos_registra_erro_e_segue(monkeypatch, tmp_path):
+    def falha(*a, **k):
+        raise FileNotFoundError("generos_exobio.json")
+
+    monkeypatch.setattr(leitor_exploracao.generos_exobio, "carregar_generos", falha)
+    e = estado.EstadoCliente()
+    t = leitor_exploracao.iniciar_thread(e, str(tmp_path), intervalo=3600)
+    assert t.is_alive()
+    mensagens = [x["mensagem"] for x in e.como_dicionario()["erros"]]
+    assert any("fichas dos gêneros indisponíveis" in m for m in mensagens)

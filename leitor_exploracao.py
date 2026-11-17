@@ -8,6 +8,7 @@ import threading
 import time
 
 import ed_parser
+import generos_exobio
 import precos_vista
 from exploracao import Historico
 
@@ -105,7 +106,12 @@ def _laco(leitor, historico, estado_cliente, intervalo, dormir=time.sleep) -> No
 
 def iniciar_thread(estado_cliente, pasta: str | None = None,
                    intervalo: int = INTERVALO_PADRAO) -> threading.Thread:
-    historico = Historico(precos_vista.carregar_precos())
+    try:
+        generos = generos_exobio.carregar_generos()
+    except (OSError, ValueError, KeyError) as e:
+        estado_cliente.registrar_erro(f"exploração: fichas dos gêneros indisponíveis: {e}")
+        generos = None
+    historico = Historico(precos_vista.carregar_precos(), generos)
     leitor = LeitorExploracao(historico, pasta)
     t = threading.Thread(target=_laco, args=(leitor, historico, estado_cliente, intervalo),
                          daemon=True, name="exploracao")

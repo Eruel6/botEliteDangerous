@@ -18,6 +18,9 @@
   table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #2b2219; }
   th { color: #9a8b76; font-weight: normal; font-size: 11px; text-transform: uppercase; }
+  th.ordenavel { cursor: pointer; user-select: none; }
+  th.ordenavel:hover { color: #ff8c1a; }
+  th.ordenavel:focus-visible { color: #ff8c1a; outline: 1px solid #ff8c1a; outline-offset: -1px; }
   .erro { color: #e05c5c; }
   .vazio { color: #6b5d4c; font-style: italic; }
   .abas { display: flex; gap: 8px; margin-bottom: 20px; }
@@ -25,6 +28,47 @@
          padding: 6px 14px; font: inherit; cursor: pointer; }
   .aba.ativa { color: #ff8c1a; border-color: #ff8c1a; }
   .bloco-titulo { font-size: 13px; color: #9a8b76; text-transform: uppercase; margin: 20px 0 6px; }
+  .cartao.clicavel { cursor: pointer; text-align: left; font: inherit; color: inherit;
+                     transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .cartao.clicavel:hover, .cartao.clicavel:focus-visible {
+    transform: translateY(-2px); border-color: #ff8c1a; box-shadow: 0 4px 16px rgba(255,140,26,.15); }
+  .cartao .linha { margin-top: 2px; }
+  #busca-precos { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
+                  padding: 6px 10px; font: inherit; margin-bottom: 8px; transition: border-color .15s; }
+  #busca-precos:focus { outline: none; border-color: #ff8c1a; }
+  tbody tr:hover { background: #241c15; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  dialog { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
+           padding: 0; max-width: min(900px, 92vw); max-height: 80vh; overflow: hidden; }
+  dialog[open] { display: flex; flex-direction: column; animation: entrada .15s ease-out; }
+  dialog::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
+  .modal-cab { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+               flex: none; margin-bottom: 8px; }
+  .modal-int { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 16px 20px; }
+  .modal-cab h2 { margin: 0; font-size: 15px; color: #ff8c1a; }
+  #modal-fechar { background: none; border: 1px solid #3a2f24; border-radius: 6px; color: #9a8b76;
+                  font: inherit; font-size: 18px; line-height: 1; padding: 2px 10px; cursor: pointer; }
+  #modal-fechar:hover { color: #ff8c1a; border-color: #ff8c1a; }
+  #modal-corpo { flex: 1; min-height: 0; overflow: auto; }
+  .link-especie { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
+                  text-decoration: underline dotted; text-underline-offset: 3px; text-align: left; }
+  .link-especie:hover, .link-especie:focus-visible { color: #ff8c1a; }
+  .ficha-foto { margin: 12px 0; min-height: 24px; color: #9a8b76; }
+  .ficha-foto img { display: block; max-width: 100%; max-height: 260px; border-radius: 6px;
+                    opacity: 0; transition: opacity .2s; }
+  .ficha-foto img.pronta { opacity: 1; }
+  .ficha a, .ficha-voltar { color: #ff8c1a; }
+  .ficha-voltar { background: none; border: none; font: inherit; cursor: pointer; padding: 0; margin-bottom: 8px; }
+  .barra rect { transition: filter .15s; }
+  .barra:hover rect { filter: brightness(1.25); }
+  .legenda { margin-top: 8px; color: #9a8b76; font-size: 12px; }
+  .leg-vendido { color: #ff8c1a; }
+  .leg-a-bordo { color: rgba(255,140,26,.35); }
+  .legenda .leg-item { margin-right: 12px; }
+  @keyframes entrada { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -58,8 +102,20 @@
 </div>
 
 <div id="aba-exploracao" style="display:none">
-  <div id="exploracao"><p class="vazio">lendo os journals…</p></div>
+  <div id="exploracao-cartoes" class="cartoes"><p class="vazio">lendo os journals…</p></div>
+  <div id="exploracao-precos"></div>
 </div>
+
+<dialog id="modal-exploracao" aria-labelledby="modal-titulo"
+        onmousedown="alvoMouseDown = event.target"
+        onclick="if (event.target === this && alvoMouseDown === this) fecharModal(); alvoMouseDown = null"
+        onclose="modalAberto = null; fichaAberta = null; modalAntesDaFicha = null">
+  <div class="modal-int">
+    <div class="modal-cab"><h2 id="modal-titulo"></h2>
+      <button id="modal-fechar" aria-label="Fechar" onclick="fecharModal()">×</button></div>
+    <div id="modal-corpo"></div>
+  </div>
+</dialog>
 
 <script>
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
@@ -176,26 +232,128 @@ function elemento(tag, texto, classe) {
   return el;
 }
 
-function tabelaTexto(cabecalho, linhas) {
+// Ordem de cada tabela ordenável: chave -> {coluna, desc}. Vive fora das
+// tabelas porque o modal é reescrito a cada leitura.
+const ordemTabelas = {};
+const cabecalhosAtuais = {};   // chave -> th[] da tabela desenhada por último
+
+function textoCelula(c) {
+  return c !== null && typeof c === "object" ? c.textContent : c;
+}
+
+// Célula da espécie: botão que abre a ficha do gênero, ou texto puro sem gênero.
+function celulaEspecie(texto, genero, chave, linha) {
+  if (!genero) return texto;
+  const b = elemento("button", texto, "link-especie");
+  b.type = "button";
+  b.chaveEspecie = chave;   // identidade estável entre polls: tabela + linha na fonte
+  b.linhaEspecie = linha;
+  b.onclick = (e) => { if (e && e.stopPropagation) e.stopPropagation(); abrirFicha(genero); };
+  return b;
+}
+
+function vazio(v) {
+  return v === null || v === undefined || v === "";
+}
+
+// Vazio sempre no fim, nos dois sentidos.
+function compararCelulas(a, b, desc) {
+  if (vazio(a) || vazio(b)) return vazio(a) === vazio(b) ? 0 : (vazio(a) ? 1 : -1);
+  const r = typeof a === "number" && typeof b === "number"
+    ? a - b : String(a).localeCompare(String(b), "pt-BR", { sensitivity: "base" });
+  return desc ? -r : r;
+}
+
+// Índices das linhas na ordem escolhida (ordem original se não há escolha).
+function indicesOrdenados(chave, valores) {
+  const idx = valores.map((_, i) => i);
+  const o = ordemTabelas[chave];
+  if (!o) return idx;
+  return idx.sort((i, j) =>
+    compararCelulas(valores[i][o.coluna], valores[j][o.coluna], o.desc) || i - j);
+}
+
+function rotuloCabecalho(chave, texto, i) {
+  const o = ordemTabelas[chave];
+  return o && o.coluna === i ? texto + (o.desc ? " ▼" : " ▲") : texto;
+}
+
+function cabecalhoOrdenavel(chave, texto, i, classe) {
+  const th = elemento("th", rotuloCabecalho(chave, texto, i), classe ? classe + " ordenavel" : "ordenavel");
+  th.tabIndex = 0;
+  th.rotulo = texto;
+  th.numerica = classe === "num";
+  th.chave = chave;
+  th.coluna = i;
+  th.onclick = () => ordenarPor(chave, i);
+  th.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      ordenarPor(chave, i, true);
+    }
+  });
+  const o = ordemTabelas[chave];
+  if (o && o.coluna === i) th.setAttribute("aria-sort", o.desc ? "descending" : "ascending");
+  return th;
+}
+
+// `opcoes.chave` torna a tabela ordenável; `opcoes.valores` (paralela a
+// `linhas`) traz o valor cru de cada célula para ordenar, senão vale o texto.
+// Uma célula pode ser um Element.
+function tabelaTexto(cabecalho, linhas, numericas = [], opcoes = {}) {
+  const chave = opcoes.chave;
   const t = elemento("table");
   const cab = elemento("tr");
-  for (const c of cabecalho) cab.appendChild(elemento("th", c));
-  t.appendChild(cab);
-  for (const linha of linhas) {
+  const ths = cabecalho.map((c, i) => {
+    const classe = numericas.includes(i) ? "num" : undefined;
+    return chave ? cabecalhoOrdenavel(chave, c, i, classe) : elemento("th", c, classe);
+  });
+  ths.forEach(th => cab.appendChild(th));
+  if (chave) cabecalhosAtuais[chave] = ths;
+  const thead = elemento("thead");
+  thead.appendChild(cab);
+  t.appendChild(thead);
+  const corpo = elemento("tbody");
+  const valores = opcoes.valores || linhas.map(l => l.map(textoCelula));
+  const ordem = chave ? indicesOrdenados(chave, valores) : linhas.map((_, i) => i);
+  for (const k of ordem) {
     const tr = elemento("tr");
-    for (const c of linha) tr.appendChild(elemento("td", c));
-    t.appendChild(tr);
+    tr.valores = valores[k];
+    linhas[k].forEach((c, i) => {
+      const td = elemento("td", undefined, numericas.includes(i) ? "num" : undefined);
+      if (c !== null && typeof c === "object") td.appendChild(c); else td.textContent = c;
+      tr.appendChild(td);
+    });
+    corpo.appendChild(tr);
   }
+  t.appendChild(corpo);
   return t;
 }
 
-function blocoExploracao(titulo, resumo, tabela, nota) {
-  const b = elemento("div");
-  b.appendChild(elemento("div", titulo, "bloco-titulo"));
-  b.appendChild(elemento("div", resumo));
-  if (tabela) b.appendChild(tabela);
-  if (nota) b.appendChild(elemento("div", nota, "vazio"));
-  return b;
+// Primeiro clique: crescente no texto, decrescente no número; depois inverte.
+function ordenarPor(chave, coluna, teclado = false) {
+  const atual = ordemTabelas[chave];
+  if (atual && atual.coluna === coluna) {
+    atual.desc = !atual.desc;
+  } else {
+    const ths = cabecalhosAtuais[chave] || [];
+    ordemTabelas[chave] = { coluna, desc: !!(ths[coluna] && ths[coluna].numerica) };
+  }
+  if (chave === "precos") {
+    if (!corpoPrecos) return;
+    const trs = Array.from(corpoPrecos.children);
+    const idx = indicesOrdenados(chave, trs.map(tr => tr.valores));
+    corpoPrecos.replaceChildren(...idx.map(i => trs[i]));
+    cabecalhosAtuais[chave].forEach((th, i) => {
+      th.textContent = rotuloCabecalho(chave, th.rotulo, i);
+      if (i === coluna) th.setAttribute("aria-sort", ordemTabelas[chave].desc ? "descending" : "ascending");
+      else th.removeAttribute("aria-sort");
+    });
+  } else if (modalAberto === chave) {
+    preencherModal(chave);
+  }
+  const th = (cabecalhosAtuais[chave] || [])[coluna];
+  if (teclado && th) th.focus();
 }
 
 // As listas de vendidas e de primeiros vêm cortadas nas mais recentes.
@@ -203,64 +361,383 @@ function cortada(mostrados, total) {
   return total > mostrados ? `mostrando ${mostrados} de ${total}` : null;
 }
 
+let dadosExploracao = null;
+let alvoMouseDown = null;  // onde o mouse foi pressionado (fecha só se clique e press foram no fundo)
+let modalAberto = null;   // chave do card aberto, ou null
+
+const TITULO_MODAL = { a_bordo: "A bordo (perde-se se morrer)", vendido: "Vendido", primeiros: "Primeiro a...",
+  sessoes: "Ganhos por sessão (coleta)" };
+
+function corpoModal(resumo, tabela, nota) {
+  const b = elemento("div");
+  b.appendChild(elemento("div", resumo));
+  if (tabela) b.appendChild(tabela);
+  if (nota) b.appendChild(elemento("div", nota, "vazio"));
+  return b;
+}
+
+// Datas lidas da própria string ISO: não dependem do fuso da máquina.
+function dataBR(iso, comAno) {
+  const [a, m, d] = String(iso).slice(0, 10).split("-");
+  return comAno ? `${d}/${m}/${a}` : `${d}/${m}`;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function noSvg(tag, attrs, texto) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (texto !== undefined) el.textContent = texto;
+  return el;
+}
+
+// Barras empilhadas por sessão: vendido (cheio) e a bordo estimado (claro).
+function graficoSessoes(sessoes) {
+  const LARG = 48, BARRA = 32, ALTURA = 160, TOPO = 8, ROTULO = 20;
+  const colunas = Math.max(sessoes.length, 6);   // poucas sessões não esticam o gráfico
+  const maior = Math.max(0, ...sessoes.map(s => s.vendido + s.a_bordo));
+  const larg = colunas * LARG, alt = TOPO + ALTURA + ROTULO;
+  const svg = noSvg("svg", {
+    viewBox: `0 0 ${larg} ${alt}`, width: larg, height: alt,
+    style: "max-width:100%;height:auto",
+    role: "img", "aria-label": "Ganhos por sessão de coleta" });
+  sessoes.forEach((s, i) => {
+    const x = i * LARG + (LARG - BARRA) / 2;
+    const hv = maior ? s.vendido / maior * ALTURA : 0;
+    const hb = maior ? s.a_bordo / maior * ALTURA : 0;
+    const base = TOPO + ALTURA;
+    const g = noSvg("g", { class: "barra" });
+    g.appendChild(noSvg("title", {},
+      `${dataBR(s.quando, true)} · vendido ${mi(s.vendido)} · a bordo ${mi(s.a_bordo)}`));
+    g.appendChild(noSvg("rect", { x, y: base - hv, width: BARRA, height: hv, fill: "#ff8c1a" }));
+    g.appendChild(noSvg("rect", { x, y: base - hv - hb, width: BARRA, height: hb,
+      fill: "rgba(255,140,26,.35)" }));
+    g.appendChild(noSvg("text", { x: x + BARRA / 2, y: base + 14, "text-anchor": "middle",
+      "font-size": 10, fill: "#9a8b76" }, dataBR(s.quando, false)));
+    svg.appendChild(g);
+  });
+  return svg;
+}
+
+function conteudoModal(chave, d) {
+  const marca = (v) => v ? "✓" : "";
+  if (chave === "a_bordo") {
+    const ab = d.a_bordo;
+    return corpoModal(
+      `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
+      ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
+        ab.amostras.map((a, i) => [
+          celulaEspecie(a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie), a.genero, "a_bordo", i),
+          a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus]), [2],
+        { chave: "a_bordo", valores: ab.amostras.map(a => [
+          a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
+          a.corpo, a.preco_base, ROTULO_BONUS[a.bonus] || a.bonus]) }) : null,
+      `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`);
+  }
+  if (chave === "vendido") {
+    const v = d.vendido;
+    const qtdVendidas = v.quantidade ?? v.amostras.length;
+    return corpoModal(
+      `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
+      v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
+        v.amostras.map((a, i) => [
+          celulaEspecie(a.especie, a.genero, "vendido", i), a.corpo, mi(a.valor),
+          a.acertou === null || a.acertou === undefined ? "" :
+            (a.acertou ? "previsão certa" : "previsão errada")]), [2],
+        { chave: "vendido", valores: v.amostras.map(a => [
+          a.especie, a.corpo, a.valor,
+          a.acertou === null || a.acertou === undefined ? "" :
+            (a.acertou ? "previsão certa" : "previsão errada")]) }) : null,
+      [cortada(v.amostras.length, qtdVendidas),
+       d.perdido && d.perdido.amostras
+         ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
+        .filter(Boolean).join(" · ") || null);
+  }
+  if (chave === "sessoes") {
+    const b = elemento("div");
+    b.appendChild(graficoSessoes(d.sessoes || []));
+    const leg = elemento("div", undefined, "legenda");
+    for (const [cls, texto] of [["leg-vendido", " vendido"], ["leg-a-bordo", " a bordo (estimado)"]]) {
+      const item = elemento("span", undefined, "leg-item");
+      item.appendChild(elemento("span", "■", cls));
+      item.appendChild(elemento("span", texto));
+      leg.appendChild(item);
+    }
+    b.appendChild(leg);
+    return b;
+  }
+  const p = d.primeiros;
+  return corpoModal(
+    `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
+    p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
+      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)]),
+      [], { chave: "primeiros", valores: p.corpos.map(c => [
+        c.corpo, c.descobriu ? 1 : 0, c.mapeou ? 1 : 0, c.pisou ? 1 : 0]) }) : null,
+    cortada(p.corpos.length, p.total_corpos ?? p.corpos.length));
+}
+
+function acharEspecie(no, chave, linha) {
+  if (no.chaveEspecie === chave && no.linhaEspecie === linha) return no;
+  for (const c of no.children || []) {
+    const r = acharEspecie(c, chave, linha);
+    if (r) return r;
+  }
+  return null;
+}
+
+function preencherModal(chave) {
+  if (!dadosExploracao) return;
+  const corpo = document.getElementById("modal-corpo");
+  const rolagem = corpo.scrollTop;
+  document.getElementById("modal-titulo").textContent = TITULO_MODAL[chave];
+  // O foco num cabeçalho ordenável não pode se perder quando o modal é reescrito.
+  const ativo = document.activeElement;
+  const dentro = ativo && corpo.contains(ativo);
+  const focado = dentro && ativo.chave ? ativo : null;
+  const focadoEsp = dentro && ativo.chaveEspecie ? ativo : null;
+  corpo.replaceChildren(conteudoModal(chave, dadosExploracao));
+  const novo = focado && (cabecalhosAtuais[focado.chave] || [])[focado.coluna];
+  if (novo) novo.focus();
+  if (focadoEsp) {
+    const achado = acharEspecie(corpo, focadoEsp.chaveEspecie, focadoEsp.linhaEspecie);
+    if (achado) achado.focus();
+  }
+  corpo.scrollTop = rolagem;
+}
+
+function abrirModal(chave) {
+  if (!dadosExploracao) return;
+  const dialogo = document.getElementById("modal-exploracao");
+  const jaAberto = modalAberto === chave && dialogo.open;
+  modalAberto = chave;
+  fichaAberta = null;
+  modalAntesDaFicha = null;
+  preencherModal(chave);
+  if (!dialogo.open) dialogo.showModal();
+  if (!jaAberto) document.getElementById("modal-corpo").scrollTop = 0;
+}
+
+function fecharModal() {
+  modalAberto = null;
+  fichaAberta = null;
+  modalAntesDaFicha = null;
+  const dialogo = document.getElementById("modal-exploracao");
+  if (dialogo.open) dialogo.close();
+}
+
+// Ficha do gênero. Abre no mesmo dialog; com `modalAberto` zerado o polling
+// não a reescreve. A foto vem da wiki (única chamada externa do painel).
+let fichaAberta = null;
+let modalAntesDaFicha = null;
+const fotosGenero = {};      // gênero -> {estado: "carregando"|"ok"|"falha", url}
+const fotosPendentes = {};   // gênero -> promessa em andamento
+let areaFoto = null;
+const URL_WIKI = "https://elite-dangerous.fandom.com/";
+
+function pintarFoto(genero) {
+  if (!areaFoto) return;
+  const f = fotosGenero[genero];
+  if (!f || f.estado === "carregando") {
+    areaFoto.replaceChildren(elemento("span", "carregando foto…"));
+  } else if (f.estado === "ok") {
+    const img = elemento("img");
+    img.alt = genero;
+    img.loading = "lazy";
+    img.onload = () => { img.className = "pronta"; };
+    img.onerror = () => { fotosGenero[genero] = { estado: "falha", url: null }; if (fichaVisivel(genero)) pintarFoto(genero); };
+    img.src = f.url;
+    areaFoto.replaceChildren(img);
+  } else {
+    areaFoto.replaceChildren(elemento("span", "foto indisponível"));
+  }
+}
+
+function fichaVisivel(genero) {
+  return fichaAberta === genero && document.getElementById("modal-exploracao").open;
+}
+
+async function buscarFoto(genero, wiki) {
+  const ctl = new AbortController();
+  const espera = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const url = `${URL_WIKI}api.php?action=query&titles=${encodeURIComponent(wiki)}`
+      + "&prop=pageimages&pithumbsize=400&format=json&origin=*";
+    const r = await fetch(url, { signal: ctl.signal });
+    if (r.ok === false) throw new Error("http");
+    const j = await r.json();
+    const paginas = Object.values((j && j.query && j.query.pages) || {});
+    const achada = paginas.map(p => p && p.thumbnail && p.thumbnail.source)
+      .find(u => typeof u === "string" && u.startsWith("https://"));
+    fotosGenero[genero] = achada ? { estado: "ok", url: achada } : { estado: "falha", url: null };
+  } catch (e) {
+    fotosGenero[genero] = { estado: "falha", url: null };
+  } finally {
+    clearTimeout(espera);
+  }
+}
+
+async function carregarFoto(genero, wiki) {
+  if (!wiki) {
+    fotosGenero[genero] = { estado: "falha", url: null };
+  } else if (fotosGenero[genero] && fotosGenero[genero].estado === "ok") {
+    // já em cache
+  } else {
+    if (!fotosPendentes[genero]) {
+      fotosGenero[genero] = { estado: "carregando", url: null };
+      if (fichaVisivel(genero)) pintarFoto(genero);
+      fotosPendentes[genero] = buscarFoto(genero, wiki).finally(() => { delete fotosPendentes[genero]; });
+    }
+    await fotosPendentes[genero];
+  }
+  if (fichaVisivel(genero)) pintarFoto(genero);
+}
+
+function abrirFicha(genero) {
+  const g = dadosExploracao && dadosExploracao.generos && dadosExploracao.generos[genero];
+  if (!g) return;
+  const dialogo = document.getElementById("modal-exploracao");
+  if (modalAberto !== null) modalAntesDaFicha = modalAberto;
+  modalAberto = null;
+  fichaAberta = genero;
+  document.getElementById("modal-titulo").textContent = genero;
+
+  const raiz = elemento("div", undefined, "ficha");
+  if (modalAntesDaFicha !== null) {
+    const voltar = elemento("button", "← voltar", "ficha-voltar");
+    voltar.type = "button";
+    voltar.onclick = () => abrirModal(modalAntesDaFicha);
+    raiz.appendChild(voltar);
+  }
+  raiz.appendChild(elemento("p", g.descricao));
+  raiz.appendChild(elemento("p", `Distância mínima entre amostras: ${g.distancia_m} m (${
+    g.fonte_distancia === "wiki" ? "fonte: wiki" : "comunidade — confira no Codex"})`));
+  areaFoto = elemento("div", undefined, "ficha-foto");
+  raiz.appendChild(areaFoto);
+  const link = elemento("a", "ver na wiki");
+  link.href = g.wiki
+    ? `${URL_WIKI}wiki/${encodeURIComponent(g.wiki)}`
+    : `${URL_WIKI}wiki/Special:Search?query=${encodeURIComponent(genero)}`;
+  link.target = "_blank";
+  link.rel = "noopener";
+  const pLink = elemento("p");
+  pLink.appendChild(link);
+  raiz.appendChild(pLink);
+  document.getElementById("modal-corpo").replaceChildren(raiz);
+  document.getElementById("modal-corpo").scrollTop = 0;
+  pintarFoto(genero);
+  if (!dialogo.open) dialogo.showModal();
+  carregarFoto(genero, g.wiki);
+}
+
+// Os cards são criados uma vez e só têm o texto trocado a cada leitura: assim
+// o foco do teclado e o hover não se perdem quando o painel repinta.
+let cartoesFeitos = null;   // { chaves: "a_bordo,vendido,...", nos: [button|div] }
+
+function criarCartao(chave) {
+  const c = elemento(chave ? "button" : "div", undefined, chave ? "cartao clicavel" : "cartao");
+  if (chave) c.addEventListener("click", () => abrirModal(chave));
+  return c;
+}
+
+function preencherCartao(c, rotulo, linhas) {
+  c.replaceChildren(elemento("div", rotulo, "rotulo"),
+    ...linhas.map(l => elemento("div", l, "linha")));
+}
+
 function falhaExploracao() {
-  document.getElementById("exploracao").replaceChildren(
+  cartoesFeitos = null;
+  document.getElementById("exploracao-cartoes").replaceChildren(
     elemento("p", "não consegui ler a exploração", "vazio"));
 }
 
+let precosDesenhados = false;
+let corpoPrecos = null;
+
+function semAcento(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function filtrarPrecos() {
+  const termo = semAcento(document.getElementById("busca-precos").value);
+  for (const tr of corpoPrecos.children) {
+    tr.style.display = semAcento(tr.children[0].textContent).includes(termo) ? "" : "none";
+  }
+}
+
+// Os preços mudam pouco: desenha uma vez, para o polling não limpar a busca.
+function pintarPrecos(d) {
+  if (precosDesenhados || !d.precos || d.precos.length === 0) return;
+  const busca = elemento("input");
+  busca.id = "busca-precos";
+  busca.placeholder = "buscar espécie…";
+  busca.setAttribute("aria-label", "buscar espécie");
+  busca.oninput = filtrarPrecos;
+  const tabela = tabelaTexto(
+    ["Espécie", "Base", `Com bônus (×${d.multiplicador})`],
+    d.precos.map(p => [celulaEspecie(p.especie, p.genero), mi(p.base), mi(p.com_bonus)]), [1, 2],
+    { chave: "precos", valores: d.precos.map(p => [p.especie, p.base, p.com_bonus]) });
+  corpoPrecos = tabela.children[1];
+  const fonte = "fonte: ed-dsn.net / Canonn";
+  const rodape = elemento("p", d.precos_atualizado_em
+    ? `atualizado em ${d.precos_atualizado_em} · ${fonte}` : fonte, "vazio");
+  document.getElementById("exploracao-precos").replaceChildren(
+    elemento("div", "Preços Vista Genomics", "bloco-titulo"), busca, tabela, rodape);
+  precosDesenhados = true;
+}
+
 function pintarExploracao(d) {
-  const raiz = document.getElementById("exploracao");
-  raiz.replaceChildren();
+  const raiz = document.getElementById("exploracao-cartoes");
   if (d.carregando) {
-    raiz.appendChild(elemento("p", "lendo os journals…", "vazio"));
+    cartoesFeitos = null;
+    raiz.replaceChildren(elemento("p", "lendo os journals…", "vazio"));
     return;
   }
-  const marca = (v) => v ? "✓" : "";
+  const ab = d.a_bordo, v = d.vendido, m = d.medias, p = d.primeiros;
+  dadosExploracao = d;
+  const obs = v.multiplicador_observado;
+  const rotuloBonus = obs !== null && obs !== undefined && Number(obs.toFixed(1)) !== d.multiplicador
+    ? `com bônus (×${d.multiplicador}, observado ×${obs.toFixed(1).replace(".", ",")})`
+    : `com bônus (×${d.multiplicador}, estimado)`;
 
-  const ab = d.a_bordo;
-  raiz.appendChild(blocoExploracao(
-    "A bordo (perde-se se morrer)",
-    `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
-    ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
-      ab.amostras.map(a => [
-        a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
-        a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus])) : null,
-    `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`));
-
-  const v = d.vendido;
-  const qtdVendidas = v.quantidade ?? v.amostras.length;
-  raiz.appendChild(blocoExploracao(
-    "Vendido",
-    `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
-    v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
-      v.amostras.map(a => [
-        a.especie, a.corpo, mi(a.valor),
-        a.acertou === null || a.acertou === undefined ? "" :
-          (a.acertou ? "previsão certa" : "previsão errada")])) : null,
-    [cortada(v.amostras.length, qtdVendidas),
-     d.perdido && d.perdido.amostras
-       ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
-      .filter(Boolean).join(" · ") || null));
-
-  const m = d.medias;
-  raiz.appendChild(blocoExploracao(
-    "Médias (coletado)",
-    `Por amostra: ${mi(m.por_amostra)}   Por planeta com coleta: ${mi(m.por_planeta)}   Por sessão (journal): ${mi(m.por_sessao)}`));
-
-  const p = d.primeiros;
-  raiz.appendChild(blocoExploracao(
-    "Primeiro a...",
-    `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
-    p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
-      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)])) : null,
-    cortada(p.corpos.length, p.total_corpos ?? p.corpos.length)));
-
+  const cartoes = [
+    ["a_bordo", "A bordo", [
+      `${ab.amostras.length} amostras · base ${mi(ab.total_base)}`,
+      `prováveis (${ab.provaveis_quantidade}): ${mi(ab.provaveis_base)} → ${mi(ab.provaveis_com_bonus)}`,
+      rotuloBonus]],
+    ["vendido", "Vendido", [
+      `${v.quantidade ?? v.amostras.length} amostras · ${mi(v.total)}`,
+      `exploração: ${mi(v.exploracao_total)}`,
+      ...(obs !== null && obs !== undefined ? [`bônus observado ×${obs.toFixed(1).replace(".", ",")}`] : [])]],
+  ];
   if (d.carreira) {
     const c = d.carreira;
-    raiz.appendChild(blocoExploracao(
-      "Carreira (dados do próprio jogo, evento Statistics)",
-      `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)} · ${c.First_Logged || 0} primeiras descobertas`));
+    cartoes.push([null, "Carreira (jogo)", [
+      `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)}`,
+      `${c.First_Logged || 0} primeiras descobertas`]]);
   }
+  const ss = d.sessoes || [];
+  const primeirosCartao = [
+    "primeiros", "Primeiro a…", [
+      `sistemas ${p.sistemas_descobertos} · corpos ${p.corpos_descobertos}`,
+      `mapeou ${p.mapeados} · pisou ${p.pisados}`]];
+  cartoes.push(primeirosCartao);
+  if (ss.length) {
+    cartoes.push(["sessoes", "Sessões", [`${ss.length} sessões`,
+      `melhor: ${mi(Math.max(...ss.map(x => x.vendido + x.a_bordo)))}`]]);
+  }
+  cartoes.push(
+    [null, "Médias", [
+      `por amostra ${mi(m.por_amostra)}`, `por planeta ${mi(m.por_planeta)}`,
+      `por sessão ${mi(m.por_sessao)}`]]);
+
+  const chaves = cartoes.map(c => c[1]).join(",");
+  if (!cartoesFeitos || cartoesFeitos.chaves !== chaves) {
+    cartoesFeitos = { chaves, nos: cartoes.map(c => criarCartao(c[0])) };
+    raiz.replaceChildren(...cartoesFeitos.nos);
+  }
+  cartoes.forEach(([, rotulo, linhas], i) => preencherCartao(cartoesFeitos.nos[i], rotulo, linhas));
+
+  if (modalAberto !== null) preencherModal(modalAberto);
+  pintarPrecos(d);
 }
 
 async function atualizar() {
