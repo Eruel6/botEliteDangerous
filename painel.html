@@ -50,6 +50,15 @@
                   font: inherit; font-size: 18px; line-height: 1; padding: 2px 10px; cursor: pointer; }
   #modal-fechar:hover { color: #ff8c1a; border-color: #ff8c1a; }
   #modal-corpo { flex: 1; min-height: 0; overflow: auto; }
+  .link-especie { background: none; border: none; padding: 0; font: inherit; color: inherit; cursor: pointer;
+                  text-decoration: underline dotted; text-underline-offset: 3px; text-align: left; }
+  .link-especie:hover, .link-especie:focus-visible { color: #ff8c1a; }
+  .ficha-foto { margin: 12px 0; min-height: 24px; color: #9a8b76; }
+  .ficha-foto img { display: block; max-width: 100%; max-height: 260px; border-radius: 6px;
+                    opacity: 0; transition: opacity .2s; }
+  .ficha-foto img.pronta { opacity: 1; }
+  .ficha a, .ficha-voltar { color: #ff8c1a; }
+  .ficha-voltar { background: none; border: none; font: inherit; cursor: pointer; padding: 0; margin-bottom: 8px; }
   .barra rect { transition: filter .15s; }
   .barra:hover rect { filter: brightness(1.25); }
   .legenda { margin-top: 8px; color: #9a8b76; font-size: 12px; }
@@ -99,7 +108,7 @@
 <dialog id="modal-exploracao" aria-labelledby="modal-titulo"
         onmousedown="alvoMouseDown = event.target"
         onclick="if (event.target === this && alvoMouseDown === this) fecharModal(); alvoMouseDown = null"
-        onclose="modalAberto = null">
+        onclose="modalAberto = null; fichaAberta = null; modalAntesDaFicha = null">
   <div class="modal-int">
     <div class="modal-cab"><h2 id="modal-titulo"></h2>
       <button id="modal-fechar" aria-label="Fechar" onclick="fecharModal()">×</button></div>
@@ -229,6 +238,15 @@ const cabecalhosAtuais = {};   // chave -> th[] da tabela desenhada por último
 
 function textoCelula(c) {
   return c !== null && typeof c === "object" ? c.textContent : c;
+}
+
+// Célula da espécie: botão que abre a ficha do gênero, ou texto puro sem gênero.
+function celulaEspecie(texto, genero) {
+  if (!genero) return texto;
+  const b = elemento("button", texto, "link-especie");
+  b.type = "button";
+  b.onclick = (e) => { if (e && e.stopPropagation) e.stopPropagation(); abrirFicha(genero); };
+  return b;
 }
 
 function vazio(v) {
@@ -403,7 +421,7 @@ function conteudoModal(chave, d) {
       `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
       ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
         ab.amostras.map(a => [
-          a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
+          celulaEspecie(a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie), a.genero),
           a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus]), [2],
         { chave: "a_bordo", valores: ab.amostras.map(a => [
           a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
@@ -417,7 +435,7 @@ function conteudoModal(chave, d) {
       `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
       v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
         v.amostras.map(a => [
-          a.especie, a.corpo, mi(a.valor),
+          celulaEspecie(a.especie, a.genero), a.corpo, mi(a.valor),
           a.acertou === null || a.acertou === undefined ? "" :
             (a.acertou ? "previsão certa" : "previsão errada")]), [2],
         { chave: "vendido", valores: v.amostras.map(a => [
@@ -466,6 +484,8 @@ function abrirModal(chave) {
   const dialogo = document.getElementById("modal-exploracao");
   const jaAberto = modalAberto === chave && dialogo.open;
   modalAberto = chave;
+  fichaAberta = null;
+  modalAntesDaFicha = null;
   preencherModal(chave);
   if (!dialogo.open) dialogo.showModal();
   if (!jaAberto) document.getElementById("modal-corpo").scrollTop = 0;
@@ -473,8 +493,113 @@ function abrirModal(chave) {
 
 function fecharModal() {
   modalAberto = null;
+  fichaAberta = null;
+  modalAntesDaFicha = null;
   const dialogo = document.getElementById("modal-exploracao");
   if (dialogo.open) dialogo.close();
+}
+
+// Ficha do gênero. Abre no mesmo dialog; com `modalAberto` zerado o polling
+// não a reescreve. A foto vem da wiki (única chamada externa do painel).
+let fichaAberta = null;
+let modalAntesDaFicha = null;
+const fotosGenero = {};      // gênero -> {estado: "carregando"|"ok"|"falha", url}
+const fotosPendentes = {};   // gênero -> promessa em andamento
+let areaFoto = null;
+const URL_WIKI = "https://elite-dangerous.fandom.com/";
+
+function pintarFoto(genero) {
+  if (!areaFoto) return;
+  const f = fotosGenero[genero];
+  if (!f || f.estado === "carregando") {
+    areaFoto.replaceChildren(elemento("span", "carregando foto…"));
+  } else if (f.estado === "ok") {
+    const img = elemento("img");
+    img.alt = genero;
+    img.loading = "lazy";
+    img.onload = () => { img.className = "pronta"; };
+    img.onerror = () => { fotosGenero[genero] = { estado: "falha", url: null }; if (fichaVisivel(genero)) pintarFoto(genero); };
+    img.src = f.url;
+    areaFoto.replaceChildren(img);
+  } else {
+    areaFoto.replaceChildren(elemento("span", "foto indisponível"));
+  }
+}
+
+function fichaVisivel(genero) {
+  return fichaAberta === genero && document.getElementById("modal-exploracao").open;
+}
+
+async function buscarFoto(genero, wiki) {
+  const ctl = new AbortController();
+  const espera = setTimeout(() => ctl.abort(), 8000);
+  try {
+    const url = `${URL_WIKI}api.php?action=query&titles=${encodeURIComponent(wiki)}`
+      + "&prop=pageimages&pithumbsize=400&format=json&origin=*";
+    const r = await fetch(url, { signal: ctl.signal });
+    if (r.ok === false) throw new Error("http");
+    const j = await r.json();
+    const paginas = Object.values((j && j.query && j.query.pages) || {});
+    const achada = paginas.map(p => p && p.thumbnail && p.thumbnail.source)
+      .find(u => typeof u === "string" && u.startsWith("https://"));
+    fotosGenero[genero] = achada ? { estado: "ok", url: achada } : { estado: "falha", url: null };
+  } catch (e) {
+    fotosGenero[genero] = { estado: "falha", url: null };
+  } finally {
+    clearTimeout(espera);
+  }
+}
+
+async function carregarFoto(genero, wiki) {
+  if (!wiki) {
+    fotosGenero[genero] = { estado: "falha", url: null };
+  } else if (fotosGenero[genero] && fotosGenero[genero].estado === "ok") {
+    // já em cache
+  } else {
+    if (!fotosPendentes[genero]) {
+      fotosGenero[genero] = { estado: "carregando", url: null };
+      fotosPendentes[genero] = buscarFoto(genero, wiki).finally(() => { delete fotosPendentes[genero]; });
+    }
+    await fotosPendentes[genero];
+  }
+  if (fichaVisivel(genero)) pintarFoto(genero);
+}
+
+function abrirFicha(genero) {
+  const g = dadosExploracao && dadosExploracao.generos && dadosExploracao.generos[genero];
+  if (!g) return;
+  const dialogo = document.getElementById("modal-exploracao");
+  if (modalAberto !== null) modalAntesDaFicha = modalAberto;
+  modalAberto = null;
+  fichaAberta = genero;
+  document.getElementById("modal-titulo").textContent = genero;
+
+  const raiz = elemento("div", undefined, "ficha");
+  if (modalAntesDaFicha !== null) {
+    const voltar = elemento("button", "← voltar", "ficha-voltar");
+    voltar.type = "button";
+    voltar.onclick = () => abrirModal(modalAntesDaFicha);
+    raiz.appendChild(voltar);
+  }
+  raiz.appendChild(elemento("p", g.descricao));
+  raiz.appendChild(elemento("p", `Distância mínima entre amostras: ${g.distancia_m} m (${
+    g.fonte_distancia === "wiki" ? "fonte: wiki" : "comunidade — confira no Codex"})`));
+  areaFoto = elemento("div", undefined, "ficha-foto");
+  raiz.appendChild(areaFoto);
+  const link = elemento("a", "ver na wiki");
+  link.href = g.wiki
+    ? `${URL_WIKI}wiki/${encodeURIComponent(g.wiki)}`
+    : `${URL_WIKI}wiki/Special:Search?query=${encodeURIComponent(genero)}`;
+  link.target = "_blank";
+  link.rel = "noopener";
+  const pLink = elemento("p");
+  pLink.appendChild(link);
+  raiz.appendChild(pLink);
+  document.getElementById("modal-corpo").replaceChildren(raiz);
+  document.getElementById("modal-corpo").scrollTop = 0;
+  pintarFoto(genero);
+  if (!dialogo.open) dialogo.showModal();
+  carregarFoto(genero, g.wiki);
 }
 
 // Os cards são criados uma vez e só têm o texto trocado a cada leitura: assim
@@ -522,7 +647,7 @@ function pintarPrecos(d) {
   busca.oninput = filtrarPrecos;
   const tabela = tabelaTexto(
     ["Espécie", "Base", `Com bônus (×${d.multiplicador})`],
-    d.precos.map(p => [p.especie, mi(p.base), mi(p.com_bonus)]), [1, 2],
+    d.precos.map(p => [celulaEspecie(p.especie, p.genero), mi(p.base), mi(p.com_bonus)]), [1, 2],
     { chave: "precos", valores: d.precos.map(p => [p.especie, p.base, p.com_bonus]) });
   corpoPrecos = tabela.children[1];
   const fonte = "fonte: ed-dsn.net / Canonn";

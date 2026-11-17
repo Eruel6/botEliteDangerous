@@ -440,7 +440,12 @@ const elements = {};
 function novo(tag) {
   return {
     set id(v) { elements[v] = this; },
-    tag: tag, children: [], textContent: undefined, className: undefined, style: {},
+    tag: tag, children: [], _t: undefined, className: undefined, style: {},
+    get textContent() {
+      return this._t !== undefined ? this._t
+        : (this.children.length ? this.children.map(c => c.textContent).join("") : undefined);
+    },
+    set textContent(v) { this._t = v; this.children = []; },
     scrollTop: 0, open: false,
     replaceChildren(...novos) { this.children = novos; },
     appendChild(c) { this.children.push(c); },
@@ -460,9 +465,13 @@ const document = {
   createElement: novo,
   createElementNS(ns, tag) { return novo(tag); },
 };
+class AbortController {
+  constructor() { this.signal = { aborted: false }; }
+  abort() { this.signal.aborted = true; }
+}
 function textos(el) {
   let r = [];
-  if (el.textContent) r.push(el.textContent);
+  if (el._t) r.push(el._t);
   for (const c of el.children || []) r = r.concat(textos(c));
   return r;
 }
@@ -480,7 +489,7 @@ function linhasVisiveis() {
 """
 
 
-def _rodar_js(programa_extra, dados=None):
+def _rodar_js(programa_extra, dados=None, timeout=5):
     """Roda o script do painel com o DOM falso; pinta `dados` (se houver) e
     depois executa `programa_extra`. Devolve o stdout."""
     node_bin = shutil.which("node") or shutil.which("nodejs")
@@ -493,7 +502,7 @@ def _rodar_js(programa_extra, dados=None):
     pintar = f"pintarExploracao({json.dumps(dados)});\n" if dados is not None else ""
     programa = NODE_STUB_EXPLORACAO + script + pintar + programa_extra + "\n"
     r = subprocess.run([node_bin], input=programa, capture_output=True,
-                       text=True, timeout=5)
+                       text=True, timeout=timeout)
     assert r.returncode == 0, r.stderr
     return r.stdout
 
@@ -939,3 +948,191 @@ const g = svg.children.find(c => c.attrs["class"] === "barra");
 console.log(g.children.filter(c => c.tag === "rect").map(c => c.attrs.height).join('|'));
 """)
     assert saida.strip() == "0|0"
+
+
+# --- Ficha do gênero ---
+
+GENEROS = {
+    "Aleoida": {"wiki": "Aleoida", "distancia_m": 150, "fonte_distancia": "wiki",
+                "descricao": "Planta de mundos frios."},
+    "Bacterium": {"wiki": None, "distancia_m": 500, "fonte_distancia": "comunidade",
+                  "descricao": "Colônias bacterianas."},
+}
+
+
+def _dados_ficha(**mudancas):
+    base = {"generos": GENEROS,
+            "precos": [{"especie": "Aleoida Gravis", "genero": "Aleoida", "base": 1, "com_bonus": 5},
+                       {"especie": "Sem Genero", "genero": None, "base": 2, "com_bonus": 10}],
+            "precos_atualizado_em": "2026-11-14"}
+    base.update(mudancas)
+    return _dados(**base)
+
+
+# fetch falso: conta chamadas e guarda as URLs.
+FETCH_OK = """
+let chamadas = [];
+globalThis.fetch = async (url, opt) => { chamadas.push(url);
+  return { json: async () => ({ query: { pages: { "42": { thumbnail: { source: "https://img/x.png" } } } } }) }; };
+"""
+FETCH_FALHA = """
+let chamadas = [];
+globalThis.fetch = async (url, opt) => { chamadas.push(url); throw new Error("rede"); };
+"""
+ACHAR = """
+function achar(el, f) {
+  if (f(el)) return el;
+  for (const c of el.children || []) { const r = achar(c, f); if (r) return r; }
+  return null;
+}
+"""
+
+
+def test_ficha_mostra_descricao_distancia_e_fonte():
+    saida = _rodar_js(FETCH_OK + "abrirFicha('Aleoida');"
+                      "console.log(elements['modal-exploracao'].open, elements['modal-titulo'].textContent,"
+                      " textos(elements['modal-corpo']).join('|'));", _dados_ficha())
+    assert saida.startswith("true Aleoida")
+    assert "Planta de mundos frios." in saida
+    assert "Distância mínima entre amostras: 150 m (fonte: wiki)" in saida
+    saida = _rodar_js(FETCH_OK + "abrirFicha('Bacterium');"
+                      "console.log(textos(elements['modal-corpo']).join('|'));", _dados_ficha())
+    assert "500 m (comunidade — confira no Codex)" in saida
+
+
+def test_ficha_carrega_foto_da_wiki():
+    saida = _rodar_js(FETCH_OK + ACHAR + """(async () => {
+      abrirFicha('Aleoida'); await carregarFoto('Aleoida', 'Aleoida');
+      const img = achar(elements['modal-corpo'], e => e.tag === 'img');
+      const a = achar(elements['modal-corpo'], e => e.tag === 'a');
+      console.log(img.src, img.alt, img.loading, a.href, a.target, a.rel, chamadas[0]);
+    })();""", _dados_ficha())
+    partes = saida.split()
+    assert partes[:3] == ["https://img/x.png", "Aleoida", "lazy"]
+    assert partes[3] == "https://elite-dangerous.fandom.com/wiki/Aleoida"
+    assert partes[4:6] == ["_blank", "noopener"]
+    assert "titles=Aleoida" in partes[6] and "pithumbsize=400" in partes[6] and "origin=*" in partes[6]
+
+
+def test_ficha_foto_falha_mostra_indisponivel_e_link():
+    saida = _rodar_js(FETCH_FALHA + ACHAR + """(async () => {
+      abrirFicha('Aleoida'); await carregarFoto('Aleoida', 'Aleoida');
+      console.log(textos(elements['modal-corpo']).join('|'),
+        !!achar(elements['modal-corpo'], e => e.tag === 'img'),
+        !!achar(elements['modal-corpo'], e => e.tag === 'a'), fotosGenero['Aleoida'].estado);
+    })();""", _dados_ficha())
+    assert "foto indisponível" in saida and saida.strip().endswith("false true falha")
+
+
+def test_ficha_sem_pagina_wiki_nao_chama_fetch_e_linka_busca():
+    saida = _rodar_js(FETCH_OK + ACHAR + """(async () => {
+      abrirFicha('Bacterium'); await carregarFoto('Bacterium', null);
+      const a = achar(elements['modal-corpo'], e => e.tag === 'a');
+      console.log(chamadas.length, a.href, textos(elements['modal-corpo']).join('|'));
+    })();""", _dados_ficha())
+    assert saida.startswith("0 https://elite-dangerous.fandom.com/wiki/Special:Search?query=Bacterium")
+    assert "foto indisponível" in saida
+
+
+def test_foto_chega_depois_de_fechar_nao_mexe_no_modal():
+    saida = _rodar_js(FETCH_OK + """(async () => {
+      abrirFicha('Aleoida'); const p = carregarFoto('Aleoida', 'Aleoida');
+      fecharModal(); abrirModal('vendido');
+      const antes = textos(elements['modal-corpo']).join('|');
+      await p;
+      console.log(antes === textos(elements['modal-corpo']).join('|'), fichaAberta, modalAberto);
+    })();""", _dados_ficha())
+    assert saida.strip() == "true null vendido"
+
+
+def test_foto_de_outra_ficha_nao_sobrescreve_a_atual():
+    saida = _rodar_js(FETCH_OK + ACHAR + """(async () => {
+      abrirFicha('Aleoida'); const p = carregarFoto('Aleoida', 'Aleoida');
+      abrirFicha('Bacterium'); await p;
+      console.log(!!achar(elements['modal-corpo'], e => e.tag === 'img'), elements['modal-titulo'].textContent);
+    })();""", _dados_ficha())
+    assert saida.strip() == "false Bacterium"
+
+
+def test_voltar_reabre_o_modal_de_origem():
+    saida = _rodar_js(FETCH_OK + ACHAR + """
+      abrirModal('vendido'); abrirFicha('Aleoida');
+      const durante = [modalAberto, modalAntesDaFicha, fichaAberta];
+      // o polling não reescreve a ficha
+      pintarExploracao(%s);
+      const intacto = elements['modal-titulo'].textContent;
+      const v = achar(elements['modal-corpo'], e => e.tag === 'button' && /voltar/.test(e.textContent || ''));
+      v.onclick();
+      console.log(JSON.stringify(durante), intacto, modalAberto, fichaAberta, modalAntesDaFicha,
+        elements['modal-titulo'].textContent, elements['modal-exploracao'].open);
+    """ % json.dumps(_dados_ficha()), _dados_ficha())
+    assert saida.strip() == '[null,"vendido","Aleoida"] Aleoida vendido null null Vendido true'
+
+
+def test_ficha_aberta_da_tabela_de_precos_nao_tem_voltar():
+    saida = _rodar_js(FETCH_OK + ACHAR + "abrirFicha('Aleoida');"
+                      "console.log(!!achar(elements['modal-corpo'], e => e.tag === 'button'),"
+                      " modalAntesDaFicha, elements['modal-exploracao'].open);", _dados_ficha())
+    assert saida.strip() == "false null true"
+
+
+def test_fechar_zera_a_ficha():
+    saida = _rodar_js(FETCH_OK + "abrirModal('vendido'); abrirFicha('Aleoida'); fecharModal();"
+                      "console.log(fichaAberta, modalAntesDaFicha, modalAberto);", _dados_ficha())
+    assert saida.strip() == "null null null"
+
+
+def test_especie_sem_genero_nao_vira_link():
+    saida = _rodar_js(ACHAR + """
+      const tr = elements['exploracao-precos'];
+      const botoes = [];
+      (function andar(el) { if (el.className === 'link-especie') botoes.push(el.textContent);
+        (el.children || []).forEach(andar); })(tr);
+      const sem = achar(tr, e => e.tag === 'td' && e._t === 'Sem Genero');
+      console.log(JSON.stringify(botoes), !!sem);
+    """, _dados_ficha())
+    assert saida.strip() == '["Aleoida Gravis"] true'
+
+
+def test_busca_de_precos_continua_funcionando_com_link():
+    saida = _rodar_js("elements['busca-precos'].value = 'GRAV'; filtrarPrecos();"
+                      "console.log(JSON.stringify(linhasVisiveis()));", _dados_ficha())
+    assert json.loads(saida) == ["Aleoida Gravis"]
+
+
+def test_ordenar_precos_com_link_usa_o_texto_do_botao():
+    saida = _rodar_js("ordenarPor('precos', 0);"
+                      "console.log(JSON.stringify(linhasVisiveis()));", _dados_ficha())
+    assert json.loads(saida) == ["Aleoida Gravis", "Sem Genero"]
+
+
+def test_botao_da_especie_abre_a_ficha_em_a_bordo_e_vendido():
+    am = {"especie": "Aleoida Arcus", "genero": "Aleoida", "especie_id": "x", "variante": "v",
+          "corpo": "A 1", "sistema": "A", "quando": "t", "preco_base": 1, "bonus": "provavel"}
+    saida = _rodar_js(ACHAR + """
+      abrirModal('a_bordo');
+      const b = achar(elements['modal-corpo'], e => e.className === 'link-especie');
+      b.onclick({ stopPropagation() {} });
+      console.log(fichaAberta, modalAntesDaFicha);
+    """, _dados_ficha(a_bordo={"amostras": [am], "total_base": 1, "total_com_bonus": 1,
+                               "provaveis_quantidade": 0, "provaveis_base": 0,
+                               "provaveis_com_bonus": 0, "sistemas_exploracao": 0,
+                               "corpos_exploracao": 0},
+                      vendido={"amostras": [_venda(genero="Aleoida")], "quantidade": 1,
+                               "total": 1, "exploracao_total": 0, "multiplicador_observado": None}))
+    assert saida.strip() == "Aleoida a_bordo"
+    saida = _rodar_js(ACHAR + """
+      abrirModal('vendido');
+      console.log(!!achar(elements['modal-corpo'], e => e.className === 'link-especie'));
+    """, _dados_ficha(vendido={"amostras": [_venda(genero="Aleoida")], "quantidade": 1,
+                               "total": 1, "exploracao_total": 0, "multiplicador_observado": None}))
+    assert saida.strip() == "true"
+
+
+def test_foto_em_cache_nao_busca_de_novo():
+    saida = _rodar_js(FETCH_OK + """(async () => {
+      abrirFicha('Aleoida'); await carregarFoto('Aleoida', 'Aleoida');
+      fecharModal(); abrirFicha('Aleoida'); await carregarFoto('Aleoida', 'Aleoida');
+      console.log(chamadas.length, fotosGenero['Aleoida'].estado);
+    })();""", _dados_ficha())
+    assert saida.strip() == "1 ok"
