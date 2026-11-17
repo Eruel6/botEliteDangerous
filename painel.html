@@ -36,15 +36,16 @@
   tbody tr:hover { background: #241c15; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   dialog { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
-           padding: 16px 20px; max-width: min(900px, 92vw); max-height: 80vh; overflow: hidden; }
+           padding: 0; max-width: min(900px, 92vw); max-height: 80vh; overflow: hidden; }
   dialog[open] { display: flex; flex-direction: column; animation: entrada .15s ease-out; }
   dialog::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
-  .modal-cab { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .modal-cab { display: flex; justify-content: space-between; align-items: center; gap: 16px;
+               flex: none; margin-bottom: 8px; }
+  .modal-int { display: flex; flex-direction: column; flex: 1; min-height: 0; padding: 16px 20px; }
   .modal-cab h2 { margin: 0; font-size: 15px; color: #ff8c1a; }
   #modal-fechar { background: none; border: 1px solid #3a2f24; border-radius: 6px; color: #9a8b76;
                   font: inherit; font-size: 18px; line-height: 1; padding: 2px 10px; cursor: pointer; }
   #modal-fechar:hover { color: #ff8c1a; border-color: #ff8c1a; }
-  .modal-cab { flex: none; margin-bottom: 8px; }
   #modal-corpo { flex: 1; min-height: 0; overflow: auto; }
   @keyframes entrada { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) {
@@ -87,10 +88,15 @@
   <div id="exploracao-precos"></div>
 </div>
 
-<dialog id="modal-exploracao" onclick="if (event.target === this) fecharModal()" onclose="modalAberto = null">
-  <div class="modal-cab"><h2 id="modal-titulo"></h2>
-    <button id="modal-fechar" aria-label="Fechar" onclick="fecharModal()">×</button></div>
-  <div id="modal-corpo"></div>
+<dialog id="modal-exploracao" aria-labelledby="modal-titulo"
+        onmousedown="alvoMouseDown = event.target"
+        onclick="if (event.target === this && alvoMouseDown === this) fecharModal(); alvoMouseDown = null"
+        onclose="modalAberto = null">
+  <div class="modal-int">
+    <div class="modal-cab"><h2 id="modal-titulo"></h2>
+      <button id="modal-fechar" aria-label="Fechar" onclick="fecharModal()">×</button></div>
+    <div id="modal-corpo"></div>
+  </div>
 </dialog>
 
 <script>
@@ -231,6 +237,7 @@ function cortada(mostrados, total) {
 }
 
 let dadosExploracao = null;
+let alvoMouseDown = null;  // onde o mouse foi pressionado (fecha só se clique e press foram no fundo)
 let modalAberto = null;   // chave do card aberto, ou null
 
 const TITULO_MODAL = { a_bordo: "A bordo (perde-se se morrer)", vendido: "Vendido", primeiros: "Primeiro a..." };
@@ -292,9 +299,9 @@ function abrirModal(chave) {
   const dialogo = document.getElementById("modal-exploracao");
   const jaAberto = modalAberto === chave && dialogo.open;
   modalAberto = chave;
-  if (!jaAberto) document.getElementById("modal-corpo").scrollTop = 0;
   preencherModal(chave);
   if (!dialogo.open) dialogo.showModal();
+  if (!jaAberto) document.getElementById("modal-corpo").scrollTop = 0;
 }
 
 function fecharModal() {
@@ -344,6 +351,7 @@ function pintarPrecos(d) {
   const busca = elemento("input");
   busca.id = "busca-precos";
   busca.placeholder = "buscar espécie…";
+  busca.setAttribute("aria-label", "buscar espécie");
   busca.oninput = filtrarPrecos;
   const tabela = tabelaTexto(
     ["Espécie", "Base", `Com bônus (×${d.multiplicador})`],
@@ -367,7 +375,7 @@ function pintarExploracao(d) {
   const ab = d.a_bordo, v = d.vendido, m = d.medias, p = d.primeiros;
   dadosExploracao = d;
   const obs = v.multiplicador_observado;
-  const rotuloBonus = obs !== null && obs !== undefined && obs !== d.multiplicador
+  const rotuloBonus = obs !== null && obs !== undefined && Number(obs.toFixed(1)) !== d.multiplicador
     ? `com bônus (×${d.multiplicador}, observado ×${obs.toFixed(1).replace(".", ",")})`
     : `com bônus (×${d.multiplicador}, estimado)`;
 

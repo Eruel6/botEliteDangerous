@@ -447,7 +447,8 @@ function novo(tag) {
     showModal() { this.open = true; },
     close() { this.open = false; },
     addEventListener() {},
-    setAttribute() {},
+    attrs: {},
+    setAttribute(k, v) { this.attrs[k] = v; },
   };
 }
 const document = {
@@ -631,6 +632,16 @@ def test_card_mostra_multiplicador_observado_quando_diverge():
     assert "bônus observado ×2,0" in saida
 
 
+def test_card_a_bordo_arredonda_observado_antes_de_comparar():
+    dados = _dados(vendido={"amostras": [], "quantidade": 0, "total": 0,
+                            "exploracao_total": 0, "multiplicador_observado": 4.96})
+
+    saida = _rodar_pintar_exploracao(dados)
+
+    assert "com bônus (×5, estimado)" in saida
+    assert "com bônus (×5, observado" not in saida
+
+
 def test_card_a_bordo_volta_a_estimado_quando_observado_igual_ao_multiplicador():
     dados = _dados(vendido={"amostras": [], "quantidade": 0, "total": 0,
                             "exploracao_total": 0, "multiplicador_observado": 5.0})
@@ -761,6 +772,12 @@ def test_tabela_de_precos_mostra_base_e_bonus():
                       _dados_precos())
     assert "Aleoida Gravis" in saida and "12,9 mi" in saida and "64,7 mi" in saida
     assert "Com bônus (×5)" in saida and "2026-11-14" in saida
+
+
+def test_busca_tem_aria_label():
+    saida = _rodar_js("console.log(elements['busca-precos'].attrs['aria-label']);",
+                      _dados_precos())
+    assert saida.strip() == "buscar espécie"
 
 
 def test_busca_ignora_acento_e_caixa():
