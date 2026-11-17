@@ -13,7 +13,6 @@
 ## Global Constraints
 
 - Worktree `.claude/worktrees/aba-exploracao`, branch `worktree-aba-exploracao`. Testes: `.venv/bin/python -m pytest -q` (base: 371 passed, 4 skipped). `.venv` é symlink, nunca vai para o git.
-- Commits em português, terminando com `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
 - Sem dependências novas e sem CDN. A única chamada externa é a API da wiki: `https://elite-dangerous.fandom.com/api.php?action=query&titles=<Página>&prop=pageimages&pithumbsize=400&format=json&origin=*`.
 - Nenhuma imagem é baixada para o repositório nem para o zip.
 - Textos em PT-BR. Créditos com `mi(n)`. Paleta: fundo `#14100c`, cartão `#1e1813`, borda `#3a2f24`, laranja `#ff8c1a`, texto `#e8dcc8`, rótulo `#9a8b76`. `prefers-reduced-motion` desliga transições.
