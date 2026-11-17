@@ -30,6 +30,9 @@
   .cartao.clicavel:hover, .cartao.clicavel:focus-visible {
     transform: translateY(-2px); border-color: #ff8c1a; box-shadow: 0 4px 16px rgba(255,140,26,.15); }
   .cartao .linha { margin-top: 2px; }
+  #busca-precos { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
+                  padding: 6px 10px; font: inherit; margin-bottom: 8px; transition: border-color .15s; }
+  #busca-precos:focus { outline: none; border-color: #ff8c1a; }
   tbody tr:hover { background: #241c15; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   dialog { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
@@ -321,7 +324,38 @@ function falhaExploracao() {
     elemento("p", "não consegui ler a exploração", "vazio"));
 }
 
-function pintarPrecos(d) {}   // a tabela de preços entra na próxima etapa
+let precosDesenhados = false;
+let corpoPrecos = null;
+
+function semAcento(s) {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+}
+
+function filtrarPrecos() {
+  const termo = semAcento(document.getElementById("busca-precos").value);
+  for (const tr of corpoPrecos.children) {
+    tr.style.display = semAcento(tr.children[0].textContent).includes(termo) ? "" : "none";
+  }
+}
+
+// Os preços mudam pouco: desenha uma vez, para o polling não limpar a busca.
+function pintarPrecos(d) {
+  if (precosDesenhados || !d.precos || d.precos.length === 0) return;
+  const busca = elemento("input");
+  busca.id = "busca-precos";
+  busca.placeholder = "buscar espécie…";
+  busca.oninput = filtrarPrecos;
+  const tabela = tabelaTexto(
+    ["Espécie", "Base", `Com bônus (×${d.multiplicador})`],
+    d.precos.map(p => [p.especie, mi(p.base), mi(p.com_bonus)]), [1, 2]);
+  corpoPrecos = tabela.children[1];
+  const fonte = "fonte: ed-dsn.net / Canonn";
+  const rodape = elemento("p", d.precos_atualizado_em
+    ? `atualizado em ${d.precos_atualizado_em} · ${fonte}` : fonte, "vazio");
+  document.getElementById("exploracao-precos").replaceChildren(
+    elemento("div", "Preços Vista Genomics", "bloco-titulo"), busca, tabela, rodape);
+  precosDesenhados = true;
+}
 
 function pintarExploracao(d) {
   const raiz = document.getElementById("exploracao-cartoes");

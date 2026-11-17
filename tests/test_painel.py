@@ -439,6 +439,7 @@ NODE_STUB_EXPLORACAO = """
 const elements = {};
 function novo(tag) {
   return {
+    set id(v) { elements[v] = this; },
     tag: tag, children: [], textContent: undefined, className: undefined, style: {},
     scrollTop: 0, open: false,
     replaceChildren(...novos) { this.children = novos; },
@@ -457,6 +458,17 @@ function textos(el) {
   let r = [];
   if (el.textContent) r.push(el.textContent);
   for (const c of el.children || []) r = r.concat(textos(c));
+  return r;
+}
+function linhasVisiveis() {
+  const r = [];
+  (function andar(el) {
+    if (el.tag === "tr" && el.style.display !== "none") {
+      const td = (el.children || []).find(c => c.tag === "td");
+      if (td) r.push(td.textContent);
+    }
+    for (const c of el.children || []) andar(c);
+  })(elements["exploracao-precos"]);
   return r;
 }
 """
@@ -734,3 +746,44 @@ def test_falha_ao_buscar_a_exploracao_aparece_na_aba():
     saida = _rodar_atualizar(None)
 
     assert "não consegui ler a exploração" in saida
+
+
+PRECOS = [{"especie": "Aleoida Gravis", "base": 12_934_900, "com_bonus": 64_674_500},
+          {"especie": "Bacterium Acies", "base": 1_000_000, "com_bonus": 5_000_000}]
+
+
+def _dados_precos():
+    return _dados(precos=PRECOS, precos_atualizado_em="2026-11-14")
+
+
+def test_tabela_de_precos_mostra_base_e_bonus():
+    saida = _rodar_js("console.log(textos(elements['exploracao-precos']).join('|'));",
+                      _dados_precos())
+    assert "Aleoida Gravis" in saida and "12,9 mi" in saida and "64,7 mi" in saida
+    assert "Com bônus (×5)" in saida and "2026-11-14" in saida
+
+
+def test_busca_ignora_acento_e_caixa():
+    saida = _rodar_js("elements['busca-precos'].value = 'ACÍES'; filtrarPrecos();"
+                      "console.log(JSON.stringify(linhasVisiveis()));", _dados_precos())
+    assert json.loads(saida) == ["Bacterium Acies"]
+
+
+def test_polling_nao_redesenha_a_tabela_nem_limpa_a_busca():
+    dados = _dados_precos()
+    saida = _rodar_js("elements['busca-precos'].value = 'acies'; filtrarPrecos();"
+                      f"pintarExploracao({json.dumps(dados)});"
+                      "console.log(elements['busca-precos'].value, JSON.stringify(linhasVisiveis()));",
+                      dados)
+    assert saida.startswith("acies") and "Aleoida" not in saida
+
+
+def test_sem_precos_nao_desenha_tabela():
+    saida = _rodar_js("console.log(textos(document.getElementById('exploracao-precos')).length);", _dados())
+    assert saida.strip() == "0"
+
+
+def test_rodape_sem_data_mostra_so_a_fonte():
+    saida = _rodar_js("console.log(textos(elements['exploracao-precos']).join('|'));",
+                      _dados(precos=PRECOS))
+    assert "fonte: ed-dsn.net / Canonn" in saida and "atualizado" not in saida
