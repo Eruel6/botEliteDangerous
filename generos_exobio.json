@@ -9,7 +9,7 @@
     "Amphora Plant": {
       "wiki": "Amphora Plant",
       "distancia_m": 100,
-      "fonte_distancia": "comunidade",
+      "fonte_distancia": "wiki",
       "descricao": "Crescimentos esverdeados em forma de ânfora, com haste tubular. Aparecem em planetas sem atmosfera, ricos em metal, em sistemas de estrela tipo A."
     },
     "Anemone": {

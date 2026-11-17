@@ -16,6 +16,7 @@ def test_json_tem_os_21_generos_completos():
         assert info["descricao"].strip() and info["distancia_m"] > 0
         assert info["fonte_distancia"] in ("wiki", "comunidade")
     assert g["Osseus"]["distancia_m"] == 800 and g["Osseus"]["fonte_distancia"] == "wiki"
+    assert g["Amphora Plant"]["distancia_m"] == 100 and g["Amphora Plant"]["fonte_distancia"] == "wiki"
     assert g["Electricae"]["distancia_m"] == 1000 and g["Electricae"]["fonte_distancia"] == "comunidade"
     assert g["Bark Mounds"]["wiki"] == "Bark Mound" and g["Crystalline Shards"]["wiki"] == "Crystalline Shard"
 

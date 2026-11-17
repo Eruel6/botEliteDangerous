@@ -926,7 +926,7 @@ console.log(barras.length);
 console.log(textos(barras[2]).join('|'));
 console.log(barras[2].children.filter(c => c.tag === "rect").map(c => c.attrs.fill).join('|'));
 console.log(textos(svg).join('|'));
-console.log(svg.attrs.width, svg.attrs.viewBox);
+console.log(svg.attrs.width, svg.attrs.viewBox, svg.attrs.height);
 console.log(TITULO_MODAL.sessoes);
 console.log(textos(conteudoModal('sessoes', %s)).join('|'));
 """ % (json.dumps(_sessoes()), json.dumps(_dados(sessoes=_sessoes()))), _dados(sessoes=_sessoes()))
@@ -935,7 +935,9 @@ console.log(textos(conteudoModal('sessoes', %s)).join('|'));
     assert "14/11/2026" in linhas[1] and "12,0 mi" not in linhas[1] and "9,0 mi" in linhas[1]
     assert linhas[2] == "#ff8c1a|rgba(255,140,26,.35)"
     assert "12/11" in linhas[3] and "14/11" in linhas[3]
-    assert linhas[4].startswith("100%")
+    assert linhas[4].startswith("144 ") or linhas[4].startswith("288 ")
+    larg, vb, alt = linhas[4].split(" ", 1)[0], linhas[4].split(" ", 1)[1].rsplit(" ", 1)[0], linhas[4].rsplit(" ", 1)[1]
+    assert vb == f"0 0 {larg} {alt}"
     assert linhas[5] == "Ganhos por sessão (coleta)"
     assert "vendido" in linhas[6] and "a bordo (estimado)" in linhas[6]
 
@@ -1136,3 +1138,62 @@ def test_foto_em_cache_nao_busca_de_novo():
       console.log(chamadas.length, fotosGenero['Aleoida'].estado);
     })();""", _dados_ficha())
     assert saida.strip() == "1 ok"
+
+
+def test_grafico_com_muitas_sessoes_tem_tamanho_natural_igual_ao_viewbox():
+    muitas = [{"sessao": str(i), "quando": "2026-11-14T11:00:00Z", "vendido": 1, "a_bordo": 1}
+              for i in range(20)]
+    saida = _rodar_js(f"const svg = graficoSessoes({json.dumps(muitas)});"
+                      "console.log(svg.attrs.width, svg.attrs.height, svg.attrs.viewBox);")
+    assert saida.strip() == "960 188 0 0 960 188"
+
+
+def test_legenda_colore_so_o_quadrado():
+    saida = _rodar_js("""
+const leg = conteudoModal('sessoes', %s).children[1];
+console.log(JSON.stringify(leg.children.map(i => [i.children[0].className, i.children[0].textContent,
+  i.children.slice(1).map(c => c.className)])));""" % json.dumps(_dados(sessoes=_sessoes())))
+    assert json.loads(saida) == [["leg-vendido", "■", [None]], ["leg-a-bordo", "■", [None]]]
+
+
+def test_foco_no_botao_de_especie_sobrevive_ao_polling():
+    dados = _dados_vendido(5_000_000, 12_900_000)
+    for a in dados["vendido"]["amostras"]:
+        a["genero"] = "Aleoida"
+    dados["generos"] = {"Aleoida": {"wiki": None, "distancia_m": 1, "fonte_distancia": "wiki",
+                                    "descricao": "x"}}
+    saida = _rodar_js(ACHAR + """abrirModal('vendido');
+const botoes = () => { const r = []; (function a(e) { if (e.className === 'link-especie') r.push(e);
+  (e.children || []).forEach(a); })(elements['modal-corpo']); return r; };
+const antigo = botoes()[1]; antigo.focus();
+pintarExploracao(%s);
+const nb = botoes()[1];
+console.log(nb !== antigo, document.activeElement === nb, nb.textContent);""" % json.dumps(dados), dados)
+    assert saida.strip() == "true true Esp1"
+
+
+def test_colunas_de_marca_do_modal_primeiros_invertem_ao_clicar_de_novo():
+    corpos = [{"corpo": "A", "descobriu": True, "mapeou": False, "pisou": False},
+              {"corpo": "B", "descobriu": False, "mapeou": False, "pisou": False},
+              {"corpo": "C", "descobriu": True, "mapeou": True, "pisou": False}]
+    dados = _dados(primeiros={"sistemas_descobertos": 0, "corpos_descobertos": 0, "mapeados": 0,
+                              "pisados": 0, "total_corpos": 3, "corpos": corpos})
+    saida = _rodar_js("""abrirModal('primeiros');
+const ordem = () => { const t = elements['modal-corpo'].children[0].children[1];
+  return t.children[1].children.map(tr => tr.children[0].textContent).join(''); };
+ordenarPor('primeiros', 1); preencherModal('primeiros'); const a = ordem();
+ordenarPor('primeiros', 1); preencherModal('primeiros'); const b = ordem();
+console.log(a, b);""", dados)
+    a, b = saida.split()
+    assert a == "BAC" and b == "ACB"   # asc e depois desc: os zeros não são "vazios"
+
+
+def test_ficha_recarregando_foto_mostra_carregando_ao_reabrir():
+    saida = _rodar_js(FETCH_FALHA + """(async () => {
+      abrirFicha('Aleoida'); await carregarFoto('Aleoida', 'Aleoida');
+      globalThis.fetch = () => new Promise(() => {});
+      abrirFicha('Aleoida');
+      console.log(textos(elements['modal-corpo']).join('|'));
+      process.exit(0);
+    })();""", _dados_ficha())
+    assert "carregando foto…" in saida and "foto indisponível" not in saida

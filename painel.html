@@ -64,6 +64,7 @@
   .legenda { margin-top: 8px; color: #9a8b76; font-size: 12px; }
   .leg-vendido { color: #ff8c1a; }
   .leg-a-bordo { color: rgba(255,140,26,.35); }
+  .legenda .leg-item { margin-right: 12px; }
   @keyframes entrada { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -241,10 +242,12 @@ function textoCelula(c) {
 }
 
 // Célula da espécie: botão que abre a ficha do gênero, ou texto puro sem gênero.
-function celulaEspecie(texto, genero) {
+function celulaEspecie(texto, genero, chave, linha) {
   if (!genero) return texto;
   const b = elemento("button", texto, "link-especie");
   b.type = "button";
+  b.chaveEspecie = chave;   // identidade estável entre polls: tabela + linha na fonte
+  b.linhaEspecie = linha;
   b.onclick = (e) => { if (e && e.stopPropagation) e.stopPropagation(); abrirFicha(genero); };
   return b;
 }
@@ -392,8 +395,10 @@ function graficoSessoes(sessoes) {
   const LARG = 48, BARRA = 32, ALTURA = 160, TOPO = 8, ROTULO = 20;
   const colunas = Math.max(sessoes.length, 6);   // poucas sessões não esticam o gráfico
   const maior = Math.max(0, ...sessoes.map(s => s.vendido + s.a_bordo));
+  const larg = colunas * LARG, alt = TOPO + ALTURA + ROTULO;
   const svg = noSvg("svg", {
-    viewBox: `0 0 ${colunas * LARG} ${TOPO + ALTURA + ROTULO}`, width: "100%",
+    viewBox: `0 0 ${larg} ${alt}`, width: larg, height: alt,
+    style: "max-width:100%;height:auto",
     role: "img", "aria-label": "Ganhos por sessão de coleta" });
   sessoes.forEach((s, i) => {
     const x = i * LARG + (LARG - BARRA) / 2;
@@ -420,8 +425,8 @@ function conteudoModal(chave, d) {
     return corpoModal(
       `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
       ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
-        ab.amostras.map(a => [
-          celulaEspecie(a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie), a.genero),
+        ab.amostras.map((a, i) => [
+          celulaEspecie(a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie), a.genero, "a_bordo", i),
           a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus]), [2],
         { chave: "a_bordo", valores: ab.amostras.map(a => [
           a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
@@ -434,8 +439,8 @@ function conteudoModal(chave, d) {
     return corpoModal(
       `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
       v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
-        v.amostras.map(a => [
-          celulaEspecie(a.especie, a.genero), a.corpo, mi(a.valor),
+        v.amostras.map((a, i) => [
+          celulaEspecie(a.especie, a.genero, "vendido", i), a.corpo, mi(a.valor),
           a.acertou === null || a.acertou === undefined ? "" :
             (a.acertou ? "previsão certa" : "previsão errada")]), [2],
         { chave: "vendido", valores: v.amostras.map(a => [
@@ -451,8 +456,12 @@ function conteudoModal(chave, d) {
     const b = elemento("div");
     b.appendChild(graficoSessoes(d.sessoes || []));
     const leg = elemento("div", undefined, "legenda");
-    leg.appendChild(elemento("span", "■ vendido", "leg-vendido"));
-    leg.appendChild(elemento("span", " ■ a bordo (estimado)", "leg-a-bordo"));
+    for (const [cls, texto] of [["leg-vendido", " vendido"], ["leg-a-bordo", " a bordo (estimado)"]]) {
+      const item = elemento("span", undefined, "leg-item");
+      item.appendChild(elemento("span", "■", cls));
+      item.appendChild(elemento("span", texto));
+      leg.appendChild(item);
+    }
     b.appendChild(leg);
     return b;
   }
@@ -461,8 +470,18 @@ function conteudoModal(chave, d) {
     `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
     p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
       p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)]),
-      [], { chave: "primeiros" }) : null,
+      [], { chave: "primeiros", valores: p.corpos.map(c => [
+        c.corpo, c.descobriu ? 1 : 0, c.mapeou ? 1 : 0, c.pisou ? 1 : 0]) }) : null,
     cortada(p.corpos.length, p.total_corpos ?? p.corpos.length));
+}
+
+function acharEspecie(no, chave, linha) {
+  if (no.chaveEspecie === chave && no.linhaEspecie === linha) return no;
+  for (const c of no.children || []) {
+    const r = acharEspecie(c, chave, linha);
+    if (r) return r;
+  }
+  return null;
 }
 
 function preencherModal(chave) {
@@ -472,10 +491,16 @@ function preencherModal(chave) {
   document.getElementById("modal-titulo").textContent = TITULO_MODAL[chave];
   // O foco num cabeçalho ordenável não pode se perder quando o modal é reescrito.
   const ativo = document.activeElement;
-  const focado = ativo && ativo.chave && corpo.contains(ativo) ? ativo : null;
+  const dentro = ativo && corpo.contains(ativo);
+  const focado = dentro && ativo.chave ? ativo : null;
+  const focadoEsp = dentro && ativo.chaveEspecie ? ativo : null;
   corpo.replaceChildren(conteudoModal(chave, dadosExploracao));
   const novo = focado && (cabecalhosAtuais[focado.chave] || [])[focado.coluna];
   if (novo) novo.focus();
+  if (focadoEsp) {
+    const achado = acharEspecie(corpo, focadoEsp.chaveEspecie, focadoEsp.linhaEspecie);
+    if (achado) achado.focus();
+  }
   corpo.scrollTop = rolagem;
 }
 
@@ -558,6 +583,7 @@ async function carregarFoto(genero, wiki) {
   } else {
     if (!fotosPendentes[genero]) {
       fotosGenero[genero] = { estado: "carregando", url: null };
+      if (fichaVisivel(genero)) pintarFoto(genero);
       fotosPendentes[genero] = buscarFoto(genero, wiki).finally(() => { delete fotosPendentes[genero]; });
     }
     await fotosPendentes[genero];
