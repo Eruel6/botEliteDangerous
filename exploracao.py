@@ -10,6 +10,8 @@ BONUS_PRIMEIRO_REGISTRO = 5
 # Quantos itens as listas de primeiros e de vendidas mostram (as mais recentes).
 # Os contadores, totais e médias continuam sobre o histórico inteiro.
 LIMITE_LISTA = 50
+# Quantas sessões de coleta o resumo traz (as mais recentes)
+LIMITE_SESSOES = 20
 
 
 class Historico:
@@ -145,6 +147,7 @@ class Historico:
             "previsao": previsao,
             "acertou": acertou,
             "sessao": par["sessao"] if par else None,
+            "coletada_em": par["quando"] if par else None,
             "genero": self._genero(especie),
         })
 
@@ -188,6 +191,7 @@ class Historico:
                         "exploracao_total": self._exploracao_vendida},
             "perdido": self._perdido,
             "medias": self._medias(),
+            "sessoes": self._sessoes(),
             "primeiros": self._primeiros(),
             "carreira": self._carreira,
             "multiplicador": BONUS_PRIMEIRO_REGISTRO,
@@ -221,6 +225,26 @@ class Historico:
             "por_planeta": media((v, c) for v, c, _ in itens if c is not None),
             "por_sessao": media((v, s) for v, _, s in itens if s is not None),
         }
+
+    def _sessoes(self):
+        # Ganhos por sessão de coleta: a venda conta na sessão em que foi coletada,
+        # não na em que foi vendida. Venda sem par a bordo não tem sessão.
+        por_sessao = {}
+
+        def entrada(sessao, quando):
+            e = por_sessao.setdefault(sessao, {"sessao": sessao, "quando": quando,
+                                               "vendido": 0, "a_bordo": 0})
+            if quando and (not e["quando"] or quando < e["quando"]):
+                e["quando"] = quando
+            return e
+
+        for a in self._amostras:
+            entrada(a["sessao"], a["quando"])["a_bordo"] += a["valor_estimado"] or 0
+        for v in self._vendidas:
+            if v["sessao"] is not None:
+                entrada(v["sessao"], v["coletada_em"])["vendido"] += v["valor"]
+        ordenadas = sorted(por_sessao.values(), key=lambda e: e["quando"] or "")
+        return ordenadas[-LIMITE_SESSOES:]
 
     def _a_bordo(self):
         provaveis = [a for a in self._amostras if a["bonus"] == "provavel"]

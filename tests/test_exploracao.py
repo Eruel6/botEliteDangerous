@@ -534,3 +534,52 @@ def test_sem_generos_resumo_fica_vazio():
     assert r["generos"] == {}
     assert r["precos"][0]["genero"] is None
     assert r["a_bordo"]["amostras"][0]["genero"] is None
+
+
+def test_sessoes_somam_por_sessao_de_coleta():
+    h = historico_vazio()
+    analisa(h, sessao="s1", quando="2026-11-14T11:00:00Z")
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), "s2")
+    sessoes = h.resumo()["sessoes"]
+    assert sessoes == [{"sessao": "s1", "quando": "2026-11-14T11:00:00Z",
+                        "vendido": 5_000_000, "a_bordo": 0}]
+
+
+def test_sessoes_separam_a_bordo_de_vendido():
+    h = historico_vazio({"Bacterium Acies": 1_000_000, "Outra Especie": 500_000})
+    analisa(h, sessao="s1", quando="2026-11-14T11:00:00Z")
+    analisa(h, especie="Outra Especie", especie_id=ID_OUTRA, body=8, sessao="s1",
+            quando="2026-11-14T12:00:00Z")
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), "s2")
+    r = h.resumo()
+    [s] = r["sessoes"]
+    assert s["quando"] == "2026-11-14T11:00:00Z"
+    assert s["vendido"] == 1_000_000
+    assert s["a_bordo"] == sum(a["valor_estimado"] for a in r["a_bordo"]["amostras"]) > 0
+
+
+def test_venda_sem_par_fica_fora_das_sessoes():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), "s2")
+    r = h.resumo()
+    assert r["vendido"]["quantidade"] == 1
+    assert r["vendido"]["amostras"][0]["coletada_em"] is None
+    assert r["sessoes"] == []
+
+
+def test_sessoes_cortam_nas_20_mais_recentes_em_ordem():
+    h = historico_vazio()
+    for i in range(25):
+        analisa(h, body=7 + i, sessao=f"s{i:02d}", quando=f"2026-11-{i + 1:02d}T11:00:00Z")
+    sessoes = h.resumo()["sessoes"]
+    assert [s["sessao"] for s in sessoes] == [f"s{i:02d}" for i in range(5, 25)]
+    assert [s["quando"] for s in sessoes] == sorted(s["quando"] for s in sessoes)
+
+
+def test_amostra_sem_preco_nao_soma_mas_sessao_aparece():
+    h = historico_vazio({"Outra Especie": 500_000})
+    analisa(h, sessao="s1")
+    r = h.resumo()
+    assert r["a_bordo"]["amostras"][0]["valor_estimado"] is None
+    assert r["sessoes"] == [{"sessao": "s1", "quando": "2026-11-14T11:00:00Z",
+                             "vendido": 0, "a_bordo": 0}]
