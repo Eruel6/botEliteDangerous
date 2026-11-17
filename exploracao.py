@@ -176,12 +176,23 @@ class Historico:
             "vendido": {"amostras": self._vendidas[::-1][:LIMITE_LISTA],
                         "quantidade": len(self._vendidas),
                         "total": sum(v["valor"] for v in self._vendidas),
+                        "multiplicador_observado": self._multiplicador_observado(),
                         "exploracao_total": self._exploracao_vendida},
             "perdido": self._perdido,
             "medias": self._medias(),
             "primeiros": self._primeiros(),
             "carreira": self._carreira,
+            "multiplicador": BONUS_PRIMEIRO_REGISTRO,
+            "precos": [{"especie": nome, "base": base, "com_bonus": base * BONUS_PRIMEIRO_REGISTRO}
+                       for nome, base in self._precos.lista()],
+            "precos_atualizado_em": self._precos.atualizado_em,
         })
+
+    def _multiplicador_observado(self):
+        # (Value + Bonus) / Value das vendas que pagaram bônus; Value é o valor base
+        razoes = [v["valor"] / (v["valor"] - v["bonus_pago"]) for v in self._vendidas
+                  if v["bonus_pago"] > 0 and v["valor"] - v["bonus_pago"] > 0]
+        return round(sum(razoes) / len(razoes), 2) if razoes else None
 
     def _medias(self):
         # (valor, corpo, sessao) de cada amostra a bordo com preço e de cada vendida
@@ -202,10 +213,14 @@ class Historico:
         }
 
     def _a_bordo(self):
+        provaveis = [a for a in self._amostras if a["bonus"] == "provavel"]
         return {
             "amostras": list(self._amostras),
             "total_base": sum(a["preco_base"] or 0 for a in self._amostras),
             "total_com_bonus": sum(a["valor_estimado"] or 0 for a in self._amostras),
+            "provaveis_quantidade": len(provaveis),
+            "provaveis_base": sum(a["preco_base"] or 0 for a in provaveis),
+            "provaveis_com_bonus": sum(a["valor_estimado"] or 0 for a in provaveis),
             "sistemas_exploracao": len(self._exploracao),
             "corpos_exploracao": sum(len(c) for c in self._exploracao.values()),
         }

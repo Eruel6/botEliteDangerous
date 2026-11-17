@@ -41,3 +41,16 @@ def test_json_versionado_carrega_e_tem_as_96_especies():
     assert p.preco("Bacterium Acies") == 1_000_000
     with open(precos_vista.CAMINHO_PADRAO, encoding="utf-8") as f:
         assert len(json.load(f)["especies"]) == 96
+
+
+def test_lista_vem_ordenada_por_preco_com_nome_original():
+    p = precos_vista.Precos({"Bacterium Acies": 1_000_000, "Aleoida Gravis": 12_934_900,
+                             "Bacterium Aurasus": 1_000_000})
+    assert p.lista() == [("Aleoida Gravis", 12_934_900), ("Bacterium Acies", 1_000_000),
+                         ("Bacterium Aurasus", 1_000_000)]
+
+
+def test_carregar_precos_traz_a_data_de_atualizacao():
+    p = precos_vista.carregar_precos()
+    assert p.atualizado_em == "2026-11-14"
+    assert len(p.lista()) == 96

@@ -130,7 +130,8 @@ def test_exploracao_a_bordo_conta_sistemas_e_corpos_escaneados():
 
 def test_resumo_ja_traz_campos_de_venda_e_morte_vazios():
     r = historico_vazio().resumo()
-    assert r["vendido"] == {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0}
+    assert r["vendido"] == {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0,
+                          "multiplicador_observado": None}
     assert r["perdido"] == {"amostras": 0, "sistemas": 0}
     assert r["medias"] == {"por_amostra": None, "por_planeta": None, "por_sessao": None}
     assert r["carreira"] is None
@@ -468,3 +469,44 @@ def test_previsao_improvavel_com_bonus_pago_erra():
     h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
     [v] = h.resumo()["vendido"]["amostras"]
     assert (v["previsao"], v["acertou"]) == ("improvavel", False)
+
+
+# ---- Cards, modais e tabela de preços ----
+
+def test_a_bordo_soma_so_as_provaveis_com_e_sem_multiplicador():
+    h = historico_vazio({"Bacterium Acies": 1_000_000, "Outra Especie": 500_000})
+    analisa(h, body=1)                                   # provável
+    analisa(h, body=2, especie="Outra Especie", especie_id=ID_OUTRA, pisado=True)  # improvável
+    ab = h.resumo()["a_bordo"]
+    assert (ab["provaveis_quantidade"], ab["provaveis_base"], ab["provaveis_com_bonus"]) == (1, 1_000_000, 5_000_000)
+    assert ab["total_base"] == 1_500_000                 # inalterado
+
+
+def test_provavel_sem_preco_conta_mas_fica_fora_das_somas():
+    h = historico_vazio()
+    analisa(h, body=1, especie="Especie Nova")
+    analisa(h, body=2)
+    ab = h.resumo()["a_bordo"]
+    assert (ab["provaveis_quantidade"], ab["provaveis_base"], ab["provaveis_com_bonus"]) == (2, 1_000_000, 5_000_000)
+
+
+def test_multiplicador_observado_ausente_sem_venda_com_bonus():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 0)]), SESSAO)
+    assert h.resumo()["vendido"]["multiplicador_observado"] is None
+
+
+def test_multiplicador_observado_e_a_media_das_vendas_com_bonus():
+    h = historico_vazio()
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000),
+                               (ID_OUTRA, "Outra", 1_000_000, 1_000_000),
+                               (ID_OUTRA, "Outra", 0, 3_000_000)]), SESSAO)   # Value 0 ignorado
+    assert h.resumo()["vendido"]["multiplicador_observado"] == 3.5
+
+
+def test_resumo_traz_precos_com_bonus_e_o_multiplicador():
+    r = historico_vazio({"Bacterium Acies": 1_000_000, "Aleoida Gravis": 2_000_000}).resumo()
+    assert r["multiplicador"] == 5
+    assert r["precos"] == [{"especie": "Aleoida Gravis", "base": 2_000_000, "com_bonus": 10_000_000},
+                           {"especie": "Bacterium Acies", "base": 1_000_000, "com_bonus": 5_000_000}]
+    assert r["precos_atualizado_em"] is None
