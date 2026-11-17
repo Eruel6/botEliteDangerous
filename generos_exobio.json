@@ -1,0 +1,130 @@
+{
+  "generos": {
+    "Aleoida": {
+      "wiki": "Aleoida",
+      "distancia_m": 200,
+      "fonte_distancia": "wiki",
+      "descricao": "Rosetas de folhas grossas e rígidas, que crescem rente ao chão. Aparecem em planetas rochosos de atmosfera fina."
+    },
+    "Amphora Plant": {
+      "wiki": "Amphora Plant",
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Planta de formato de ânfora, com haste e copa em forma de vaso. Costuma ser vista em planetas com atividade geológica."
+    },
+    "Anemone": {
+      "wiki": "Anemone",
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Estrutura com ramos que lembram uma anêmona-do-mar. Cresce em planetas de atmosfera fina."
+    },
+    "Bacterium": {
+      "wiki": "Bacterium",
+      "distancia_m": 500,
+      "fonte_distancia": "comunidade",
+      "descricao": "Camada fina, quase lisa, que cobre o chão em grandes extensões. É o gênero mais comum e aparece em quase todo tipo de planeta."
+    },
+    "Bark Mounds": {
+      "wiki": "Bark Mound",
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Montes com aspecto de casca de árvore, cheios de rugas. Costumam ficar perto de nebulosas e de geologia ativa."
+    },
+    "Brain Tree": {
+      "wiki": "Brain Tree",
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Árvore de tronco curto, com copa enrugada que lembra um cérebro. Costuma ser vista em planetas com atividade geológica."
+    },
+    "Cactoida": {
+      "wiki": "Cactoida",
+      "distancia_m": 300,
+      "fonte_distancia": "wiki",
+      "descricao": "Plantas de hastes grossas que lembram cactos. Crescem em planetas rochosos de atmosfera fina."
+    },
+    "Clypeus": {
+      "wiki": "Clypeus",
+      "distancia_m": 150,
+      "fonte_distancia": "wiki",
+      "descricao": "Placas largas em forma de escudo, que se espalham pelo chão. Ocorrem em planetas quentes e de atmosfera fina."
+    },
+    "Concha": {
+      "wiki": "Concha",
+      "distancia_m": 150,
+      "fonte_distancia": "wiki",
+      "descricao": "Estruturas que lembram conchas fechadas, quase coladas ao solo. Aparecem em planetas rochosos."
+    },
+    "Crystalline Shards": {
+      "wiki": null,
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Cristais pontiagudos que brotam do solo em agrupamentos. Costumam ficar em planetas gelados ou rochosos, em regiões de brilho forte."
+    },
+    "Electricae": {
+      "wiki": "Electricae",
+      "distancia_m": 1000,
+      "fonte_distancia": "comunidade",
+      "descricao": "Filamentos que brilham como descargas elétricas. Aparecem em planetas gelados."
+    },
+    "Fonticulua": {
+      "wiki": "Fonticulua",
+      "distancia_m": 500,
+      "fonte_distancia": "wiki",
+      "descricao": "Formas de fonte ou leque, que crescem sobre o gelo. Ocorrem em planetas gelados e frios."
+    },
+    "Frutexa": {
+      "wiki": "Frutexa",
+      "distancia_m": 150,
+      "fonte_distancia": "wiki",
+      "descricao": "Arbustos de ramos finos e esparramados, de aspecto seco. Crescem em planetas rochosos de atmosfera fina."
+    },
+    "Fumerola": {
+      "wiki": "Fumerola",
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Formações que crescem junto a fumarolas e outras fontes de vulcanismo. Surgem perto de gêiseres e fissuras quentes."
+    },
+    "Fungoida": {
+      "wiki": "Fungoida",
+      "distancia_m": 300,
+      "fonte_distancia": "wiki",
+      "descricao": "Formas que lembram cogumelos, com chapéu e haste. Aparecem em planetas de atmosfera com gases como amônia ou argônio."
+    },
+    "Osseus": {
+      "wiki": "Osseus",
+      "distancia_m": 800,
+      "fonte_distancia": "wiki",
+      "descricao": "Estruturas esbranquiçadas que lembram ossos ou corais. Crescem em planetas rochosos e de gelo."
+    },
+    "Recepta": {
+      "wiki": "Recepta",
+      "distancia_m": 150,
+      "fonte_distancia": "comunidade",
+      "descricao": "Bolsas ou receptáculos que se abrem para cima, de cores vivas. Costumam aparecer em planetas de atmosfera rica em enxofre."
+    },
+    "Sinuous Tubers": {
+      "wiki": null,
+      "distancia_m": 100,
+      "fonte_distancia": "comunidade",
+      "descricao": "Tubérculos sinuosos que serpenteiam pelo solo. Costumam ficar perto de geologia ativa."
+    },
+    "Stratum": {
+      "wiki": "Stratum",
+      "distancia_m": 500,
+      "fonte_distancia": "wiki",
+      "descricao": "Crosta em placas, como um tapete duro sobre a rocha. Cresce em planetas rochosos quentes."
+    },
+    "Tubus": {
+      "wiki": "Tubus",
+      "distancia_m": 800,
+      "fonte_distancia": "wiki",
+      "descricao": "Tubos altos e ocos, que saem do solo isolados ou em grupos. Aparecem em planetas rochosos de atmosfera fina."
+    },
+    "Tussock": {
+      "wiki": "Tussock",
+      "distancia_m": 200,
+      "fonte_distancia": "wiki",
+      "descricao": "Tufos de folhas finas, em forma de touceira. Crescem em planetas rochosos e de atmosfera fina."
+    }
+  }
+}

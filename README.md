@@ -73,7 +73,8 @@ credencial individual.
 Monte um zip com: `cliente.py`, `monitor.py`, `painel.py`, `painel.html`,
 `estado.py`, `config_cliente.py`, `ed_parser.py`, `comandante.py`,
 `compras.py`, `ardent.py`, `exploracao.py`, `leitor_exploracao.py`,
-`precos_vista.py`, `precos_vista.json`, `config.exemplo.txt` e `iniciar.bat`.
+`precos_vista.py`, `precos_vista.json`, `generos_exobio.py`,
+`generos_exobio.json`, `config.exemplo.txt` e `iniciar.bat`.
 
 (`tests/test_readme.py` confere que esta lista traz tudo o que o cliente importa.)
 

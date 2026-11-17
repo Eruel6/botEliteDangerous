@@ -507,6 +507,30 @@ def test_multiplicador_observado_e_a_media_das_vendas_com_bonus():
 def test_resumo_traz_precos_com_bonus_e_o_multiplicador():
     r = historico_vazio({"Bacterium Acies": 1_000_000, "Aleoida Gravis": 2_000_000}).resumo()
     assert r["multiplicador"] == 5
-    assert r["precos"] == [{"especie": "Aleoida Gravis", "base": 2_000_000, "com_bonus": 10_000_000},
-                           {"especie": "Bacterium Acies", "base": 1_000_000, "com_bonus": 5_000_000}]
+    assert r["precos"] == [{"especie": "Aleoida Gravis", "base": 2_000_000, "com_bonus": 10_000_000,
+                         "genero": None},
+                           {"especie": "Bacterium Acies", "base": 1_000_000, "com_bonus": 5_000_000,
+                         "genero": None}]
     assert r["precos_atualizado_em"] is None
+
+
+def test_resumo_traz_generos_e_genero_nos_itens():
+    import generos_exobio
+    info = {"wiki": "Bacterium", "distancia_m": 500, "fonte_distancia": "comunidade", "descricao": "x"}
+    h = exploracao.Historico(precos_vista.Precos({"Bacterium Acies": 1_000_000}),
+                             generos_exobio.Generos({"Bacterium": info}))
+    analisa(h)
+    r = h.resumo()
+    assert r["generos"] == {"Bacterium": info}
+    assert r["precos"][0]["genero"] == "Bacterium"
+    assert r["a_bordo"]["amostras"][0]["genero"] == "Bacterium"
+    h.consumir(venda_organica([(ID_ACIES, "Bacterium Acies", 1_000_000, 4_000_000)]), SESSAO)
+    assert h.resumo()["vendido"]["amostras"][0]["genero"] == "Bacterium"
+
+
+def test_sem_generos_resumo_fica_vazio():
+    h = historico_com_analyse()
+    r = h.resumo()
+    assert r["generos"] == {}
+    assert r["precos"][0]["genero"] is None
+    assert r["a_bordo"]["amostras"][0]["genero"] is None

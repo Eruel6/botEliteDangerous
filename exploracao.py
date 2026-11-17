@@ -3,6 +3,7 @@
 
 import copy
 
+from generos_exobio import Generos
 from precos_vista import Precos
 
 BONUS_PRIMEIRO_REGISTRO = 5
@@ -12,8 +13,9 @@ LIMITE_LISTA = 50
 
 
 class Historico:
-    def __init__(self, precos: Precos):
+    def __init__(self, precos: Precos, generos: Generos | None = None):
         self._precos = precos
+        self._generos = generos
         self._sistemas = {}          # SystemAddress -> nome
         self._scans = {}             # (SystemAddress, BodyID) -> dados do primeiro Scan
         self._mapeados = set()       # chaves de corpo com SAAScanComplete
@@ -112,6 +114,7 @@ class Historico:
             "bonus": bonus,
             "valor_estimado": valor,
             "sessao": sessao,
+            "genero": self._genero(especie),
         })
 
     def _ao_SellOrganicData(self, ev, sessao):
@@ -130,8 +133,9 @@ class Historico:
         acertou = None
         if previsao is not None and previsao != "desconhecido":
             acertou = (bonus_pago > 0) == (previsao == "provavel")
+        especie = par["especie"] if par else (item.get("Species_Localised") or "")
         self._vendidas.append({
-            "especie": par["especie"] if par else (item.get("Species_Localised") or ""),
+            "especie": especie,
             "variante": par["variante"] if par else (item.get("Variant_Localised") or ""),
             "corpo": par["corpo"] if par else None,
             "sistema": par["sistema"] if par else None,
@@ -141,7 +145,11 @@ class Historico:
             "previsao": previsao,
             "acertou": acertou,
             "sessao": par["sessao"] if par else None,
+            "genero": self._genero(especie),
         })
+
+    def _genero(self, especie):
+        return self._generos.genero_de(especie) if self._generos else None
 
     def _ao_SellExplorationData(self, ev, sessao):
         self._exploracao_vendida += ev.get("TotalEarnings") or 0
@@ -183,8 +191,10 @@ class Historico:
             "primeiros": self._primeiros(),
             "carreira": self._carreira,
             "multiplicador": BONUS_PRIMEIRO_REGISTRO,
-            "precos": [{"especie": nome, "base": base, "com_bonus": base * BONUS_PRIMEIRO_REGISTRO}
+            "precos": [{"especie": nome, "base": base, "com_bonus": base * BONUS_PRIMEIRO_REGISTRO,
+                        "genero": self._genero(nome)}
                        for nome, base in self._precos.lista()],
+            "generos": self._generos.dados if self._generos else {},
             "precos_atualizado_em": self._precos.atualizado_em,
         })
 
