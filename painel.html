@@ -25,6 +25,27 @@
          padding: 6px 14px; font: inherit; cursor: pointer; }
   .aba.ativa { color: #ff8c1a; border-color: #ff8c1a; }
   .bloco-titulo { font-size: 13px; color: #9a8b76; text-transform: uppercase; margin: 20px 0 6px; }
+  .cartao.clicavel { cursor: pointer; text-align: left; font: inherit; color: inherit;
+                     transition: transform .15s, border-color .15s, box-shadow .15s; }
+  .cartao.clicavel:hover, .cartao.clicavel:focus-visible {
+    transform: translateY(-2px); border-color: #ff8c1a; box-shadow: 0 4px 16px rgba(255,140,26,.15); }
+  .cartao .linha { margin-top: 2px; }
+  tbody tr:hover { background: #241c15; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  dialog { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
+           padding: 16px 20px; max-width: min(900px, 92vw); max-height: 80vh; overflow: auto; }
+  dialog[open] { animation: entrada .15s ease-out; }
+  dialog::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
+  .modal-cab { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  .modal-cab h2 { margin: 0; font-size: 15px; color: #ff8c1a; }
+  #modal-fechar { background: none; border: 1px solid #3a2f24; border-radius: 6px; color: #9a8b76;
+                  font: inherit; font-size: 18px; line-height: 1; padding: 2px 10px; cursor: pointer; }
+  #modal-fechar:hover { color: #ff8c1a; border-color: #ff8c1a; }
+  #modal-corpo { overflow: auto; }
+  @keyframes entrada { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
 </style>
 </head>
 <body>
@@ -58,8 +79,15 @@
 </div>
 
 <div id="aba-exploracao" style="display:none">
-  <div id="exploracao"><p class="vazio">lendo os journals…</p></div>
+  <div id="exploracao-cartoes" class="cartoes"><p class="vazio">lendo os journals…</p></div>
+  <div id="exploracao-precos"></div>
 </div>
+
+<dialog id="modal-exploracao" onclick="if (event.target === this) fecharModal()" onclose="modalAberto = null">
+  <div class="modal-cab"><h2 id="modal-titulo"></h2>
+    <button id="modal-fechar" aria-label="Fechar" onclick="fecharModal()">×</button></div>
+  <div id="modal-corpo"></div>
+</dialog>
 
 <script>
 const hora = (iso) => iso ? new Date(iso).toLocaleTimeString("pt-BR") : "nunca";
@@ -176,26 +204,21 @@ function elemento(tag, texto, classe) {
   return el;
 }
 
-function tabelaTexto(cabecalho, linhas) {
+function tabelaTexto(cabecalho, linhas, numericas = []) {
   const t = elemento("table");
   const cab = elemento("tr");
-  for (const c of cabecalho) cab.appendChild(elemento("th", c));
-  t.appendChild(cab);
+  cabecalho.forEach((c, i) => cab.appendChild(elemento("th", c, numericas.includes(i) ? "num" : undefined)));
+  const thead = elemento("thead");
+  thead.appendChild(cab);
+  t.appendChild(thead);
+  const corpo = elemento("tbody");
   for (const linha of linhas) {
     const tr = elemento("tr");
-    for (const c of linha) tr.appendChild(elemento("td", c));
-    t.appendChild(tr);
+    linha.forEach((c, i) => tr.appendChild(elemento("td", c, numericas.includes(i) ? "num" : undefined)));
+    corpo.appendChild(tr);
   }
+  t.appendChild(corpo);
   return t;
-}
-
-function blocoExploracao(titulo, resumo, tabela, nota) {
-  const b = elemento("div");
-  b.appendChild(elemento("div", titulo, "bloco-titulo"));
-  b.appendChild(elemento("div", resumo));
-  if (tabela) b.appendChild(tabela);
-  if (nota) b.appendChild(elemento("div", nota, "vazio"));
-  return b;
 }
 
 // As listas de vendidas e de primeiros vêm cortadas nas mais recentes.
@@ -203,64 +226,135 @@ function cortada(mostrados, total) {
   return total > mostrados ? `mostrando ${mostrados} de ${total}` : null;
 }
 
-function falhaExploracao() {
-  document.getElementById("exploracao").replaceChildren(
-    elemento("p", "não consegui ler a exploração", "vazio"));
+let dadosExploracao = null;
+let modalAberto = null;   // chave do card aberto, ou null
+
+const TITULO_MODAL = { a_bordo: "A bordo (perde-se se morrer)", vendido: "Vendido", primeiros: "Primeiro a..." };
+
+function corpoModal(resumo, tabela, nota) {
+  const b = elemento("div");
+  b.appendChild(elemento("div", resumo));
+  if (tabela) b.appendChild(tabela);
+  if (nota) b.appendChild(elemento("div", nota, "vazio"));
+  return b;
 }
 
-function pintarExploracao(d) {
-  const raiz = document.getElementById("exploracao");
-  raiz.replaceChildren();
-  if (d.carregando) {
-    raiz.appendChild(elemento("p", "lendo os journals…", "vazio"));
-    return;
-  }
+function conteudoModal(chave, d) {
   const marca = (v) => v ? "✓" : "";
-
-  const ab = d.a_bordo;
-  raiz.appendChild(blocoExploracao(
-    "A bordo (perde-se se morrer)",
-    `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
-    ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
-      ab.amostras.map(a => [
-        a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
-        a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus])) : null,
-    `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`));
-
-  const v = d.vendido;
-  const qtdVendidas = v.quantidade ?? v.amostras.length;
-  raiz.appendChild(blocoExploracao(
-    "Vendido",
-    `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
-    v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
-      v.amostras.map(a => [
-        a.especie, a.corpo, mi(a.valor),
-        a.acertou === null || a.acertou === undefined ? "" :
-          (a.acertou ? "previsão certa" : "previsão errada")])) : null,
-    [cortada(v.amostras.length, qtdVendidas),
-     d.perdido && d.perdido.amostras
-       ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
-      .filter(Boolean).join(" · ") || null));
-
-  const m = d.medias;
-  raiz.appendChild(blocoExploracao(
-    "Médias (coletado)",
-    `Por amostra: ${mi(m.por_amostra)}   Por planeta com coleta: ${mi(m.por_planeta)}   Por sessão (journal): ${mi(m.por_sessao)}`));
-
+  if (chave === "a_bordo") {
+    const ab = d.a_bordo;
+    return corpoModal(
+      `Amostras: ${ab.amostras.length}   Base: ${mi(ab.total_base)}   Com bônus provável: ${mi(ab.total_com_bonus)}`,
+      ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
+        ab.amostras.map(a => [
+          a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
+          a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus]), [2]) : null,
+      `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`);
+  }
+  if (chave === "vendido") {
+    const v = d.vendido;
+    const qtdVendidas = v.quantidade ?? v.amostras.length;
+    return corpoModal(
+      `Amostras: ${qtdVendidas}   Total: ${mi(v.total)}   Exploração: ${mi(v.exploracao_total)}`,
+      v.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Valor", "Previsão"],
+        v.amostras.map(a => [
+          a.especie, a.corpo, mi(a.valor),
+          a.acertou === null || a.acertou === undefined ? "" :
+            (a.acertou ? "previsão certa" : "previsão errada")]), [2]) : null,
+      [cortada(v.amostras.length, qtdVendidas),
+       d.perdido && d.perdido.amostras
+         ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
+        .filter(Boolean).join(" · ") || null);
+  }
   const p = d.primeiros;
-  raiz.appendChild(blocoExploracao(
-    "Primeiro a...",
+  return corpoModal(
     `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
     p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
       p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)])) : null,
-    cortada(p.corpos.length, p.total_corpos ?? p.corpos.length)));
+    cortada(p.corpos.length, p.total_corpos ?? p.corpos.length));
+}
 
+function preencherModal(chave) {
+  if (!dadosExploracao) return;
+  const corpo = document.getElementById("modal-corpo");
+  const rolagem = corpo.scrollTop;
+  document.getElementById("modal-titulo").textContent = TITULO_MODAL[chave];
+  corpo.replaceChildren(conteudoModal(chave, dadosExploracao));
+  corpo.scrollTop = rolagem;
+}
+
+function abrirModal(chave) {
+  if (!dadosExploracao) return;
+  const dialogo = document.getElementById("modal-exploracao");
+  const jaAberto = modalAberto === chave && dialogo.open;
+  modalAberto = chave;
+  if (!jaAberto) document.getElementById("modal-corpo").scrollTop = 0;
+  preencherModal(chave);
+  if (!dialogo.open) dialogo.showModal();
+}
+
+function fecharModal() {
+  modalAberto = null;
+  const dialogo = document.getElementById("modal-exploracao");
+  if (dialogo.open) dialogo.close();
+}
+
+function cartao(rotulo, linhas, chave) {
+  const c = elemento(chave ? "button" : "div", undefined, chave ? "cartao clicavel" : "cartao");
+  c.appendChild(elemento("div", rotulo, "rotulo"));
+  for (const l of linhas) c.appendChild(elemento("div", l, "linha"));
+  if (chave) c.addEventListener("click", () => abrirModal(chave));
+  return c;
+}
+
+function falhaExploracao() {
+  document.getElementById("exploracao-cartoes").replaceChildren(
+    elemento("p", "não consegui ler a exploração", "vazio"));
+}
+
+function pintarPrecos(d) {}   // a tabela de preços entra na próxima etapa
+
+function pintarExploracao(d) {
+  const raiz = document.getElementById("exploracao-cartoes");
+  if (d.carregando) {
+    raiz.replaceChildren(elemento("p", "lendo os journals…", "vazio"));
+    return;
+  }
+  const ab = d.a_bordo, v = d.vendido, m = d.medias, p = d.primeiros;
+  dadosExploracao = d;
+  const obs = v.multiplicador_observado;
+  const rotuloBonus = obs !== null && obs !== undefined && obs !== d.multiplicador
+    ? `com bônus (×${d.multiplicador}, observado ×${obs.toFixed(1).replace(".", ",")})`
+    : `com bônus (×${d.multiplicador}, estimado)`;
+
+  const cartoes = [
+    cartao("A bordo", [
+      `${ab.amostras.length} amostras · base ${mi(ab.total_base)}`,
+      `prováveis (${ab.provaveis_quantidade}): ${mi(ab.provaveis_base)} → ${mi(ab.provaveis_com_bonus)}`,
+      rotuloBonus], "a_bordo"),
+    cartao("Vendido", [
+      `${v.quantidade ?? v.amostras.length} amostras · ${mi(v.total)}`,
+      `exploração: ${mi(v.exploracao_total)}`,
+      ...(obs !== null && obs !== undefined ? [`bônus observado ×${obs.toFixed(1).replace(".", ",")}`] : [])],
+      "vendido"),
+  ];
   if (d.carreira) {
     const c = d.carreira;
-    raiz.appendChild(blocoExploracao(
-      "Carreira (dados do próprio jogo, evento Statistics)",
-      `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)} · ${c.First_Logged || 0} primeiras descobertas`));
+    cartoes.push(cartao("Carreira (jogo)", [
+      `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)}`,
+      `${c.First_Logged || 0} primeiras descobertas`]));
   }
+  cartoes.push(
+    cartao("Primeiro a…", [
+      `sistemas ${p.sistemas_descobertos} · corpos ${p.corpos_descobertos}`,
+      `mapeou ${p.mapeados} · pisou ${p.pisados}`], "primeiros"),
+    cartao("Médias", [
+      `por amostra ${mi(m.por_amostra)}`, `por planeta ${mi(m.por_planeta)}`,
+      `por sessão ${mi(m.por_sessao)}`]));
+  raiz.replaceChildren(...cartoes);
+
+  if (modalAberto !== null) preencherModal(modalAberto);
+  pintarPrecos(d);
 }
 
 async function atualizar() {

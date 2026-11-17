@@ -440,8 +440,13 @@ const elements = {};
 function novo(tag) {
   return {
     tag: tag, children: [], textContent: undefined, className: undefined, style: {},
+    scrollTop: 0, open: false,
     replaceChildren(...novos) { this.children = novos; },
     appendChild(c) { this.children.push(c); },
+    showModal() { this.open = true; },
+    close() { this.open = false; },
+    addEventListener() {},
+    setAttribute() {},
   };
 }
 const document = {
@@ -457,7 +462,9 @@ function textos(el) {
 """
 
 
-def _rodar_pintar_exploracao(dados):
+def _rodar_js(programa_extra, dados=None):
+    """Roda o script do painel com o DOM falso; pinta `dados` (se houver) e
+    depois executa `programa_extra`. Devolve o stdout."""
     node_bin = shutil.which("node") or shutil.which("nodejs")
     if not node_bin:
         pytest.skip("node não encontrado")
@@ -465,13 +472,52 @@ def _rodar_pintar_exploracao(dados):
         html = f.read()
     script = re.search(r"<script>(.*?)</script>", html, re.DOTALL).group(1)
     script = script.split("async function atualizar")[0]
-    programa = (NODE_STUB_EXPLORACAO + script +
-                f"pintarExploracao({json.dumps(dados)});\n"
-                "console.log(textos(elements['exploracao']).join('|'));\n")
+    pintar = f"pintarExploracao({json.dumps(dados)});\n" if dados is not None else ""
+    programa = NODE_STUB_EXPLORACAO + script + pintar + programa_extra + "\n"
     r = subprocess.run([node_bin], input=programa, capture_output=True,
                        text=True, timeout=5)
     assert r.returncode == 0, r.stderr
     return r.stdout
+
+
+def _rodar_pintar_exploracao(dados, extra=""):
+    return _rodar_js("console.log(textos(elements['exploracao-cartoes']).join('|'));\n"
+                     + extra, dados)
+
+
+def _dados(**mudancas):
+    """Resumo de exploração completo e vazio; `mudancas` troca blocos inteiros."""
+    base = {
+        "carregando": False,
+        "a_bordo": {"amostras": [], "total_base": 0, "total_com_bonus": 0,
+                    "provaveis_quantidade": 0, "provaveis_base": 0,
+                    "provaveis_com_bonus": 0,
+                    "sistemas_exploracao": 0, "corpos_exploracao": 0},
+        "vendido": {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0,
+                    "multiplicador_observado": None},
+        "perdido": {"amostras": 0, "sistemas": 0},
+        "medias": {"por_amostra": None, "por_planeta": None, "por_sessao": None},
+        "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 0,
+                      "mapeados": 0, "pisados": 0, "total_corpos": 0, "corpos": []},
+        "carreira": None,
+        "multiplicador": 5,
+        "precos": [],
+        "precos_atualizado_em": None,
+    }
+    base.update(mudancas)
+    return base
+
+
+def _venda(especie="Aleoida Arcus", **mudancas):
+    v = {"especie": especie, "variante": "v", "corpo": "A 1", "sistema": "A",
+         "quando": "t", "valor": 7_000_000, "bonus_pago": 0, "previsao": None,
+         "acertou": None, "sessao": None}
+    v.update(mudancas)
+    return v
+
+
+def _textos_modal(chave, dados):
+    return _rodar_js(f"console.log(textos(conteudoModal('{chave}', {json.dumps(dados)})).join('|'));")
 
 
 def test_pintar_exploracao_renderiza_amostra_a_bordo_e_primeiros():
@@ -479,53 +525,44 @@ def test_pintar_exploracao_renderiza_amostra_a_bordo_e_primeiros():
                "corpo": "Plio Eurl IX-Z b14-0 B 1", "sistema": "Plio Eurl IX-Z b14-0",
                "quando": "2026-11-14T10:00:00Z", "preco_base": 5_000_000,
                "bonus": "provavel", "valor_estimado": 20_000_000, "sessao": 1}
-    dados = {
-        "carregando": False,
-        "a_bordo": {"amostras": [amostra], "total_base": 5_000_000,
-                    "total_com_bonus": 20_000_000, "sistemas_exploracao": 1,
-                    "corpos_exploracao": 3},
-        "vendido": {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0},
-        "perdido": {"amostras": 0, "sistemas": 0},
-        "medias": {"por_amostra": 5_000_000, "por_planeta": None, "por_sessao": None},
-        "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 1,
-                      "mapeados": 1, "pisados": 1, "total_corpos": 1,
-                      "corpos": [{"corpo": "Plio Eurl IX-Z b14-0 B 1",
-                                  "sistema": "Plio Eurl IX-Z b14-0",
-                                  "descobriu": True, "mapeou": True, "pisou": True}]},
-        "carreira": None,
-    }
+    dados = _dados(
+        a_bordo={"amostras": [amostra], "total_base": 5_000_000,
+                 "total_com_bonus": 20_000_000, "provaveis_quantidade": 1,
+                 "provaveis_base": 5_000_000, "provaveis_com_bonus": 25_000_000,
+                 "sistemas_exploracao": 1, "corpos_exploracao": 3},
+        medias={"por_amostra": 5_000_000, "por_planeta": None, "por_sessao": None},
+        primeiros={"sistemas_descobertos": 0, "corpos_descobertos": 1,
+                   "mapeados": 1, "pisados": 1, "total_corpos": 1,
+                   "corpos": [{"corpo": "Plio Eurl IX-Z b14-0 B 1",
+                               "sistema": "Plio Eurl IX-Z b14-0",
+                               "descobriu": True, "mapeou": True, "pisou": True}]})
 
-    saida = _rodar_pintar_exploracao(dados)
+    cartoes = _rodar_pintar_exploracao(dados)
+    a_bordo = _textos_modal("a_bordo", dados)
+    primeiros = _textos_modal("primeiros", dados)
 
-    assert "Bacterium Acies" in saida
-    assert "provável" in saida
-    assert "5,0 mi" in saida
-    assert "Plio Eurl IX-Z b14-0 B 1" in saida
+    assert "A bordo" in cartoes and "por amostra 5,0 mi" in cartoes
+    assert "Bacterium Acies" in a_bordo
+    assert "provável" in a_bordo
+    assert "5,0 mi" in a_bordo
+    assert "Plio Eurl IX-Z b14-0 B 1" in primeiros
 
 
 def test_pintar_exploracao_mostra_previsao_da_venda_e_a_carreira():
-    dados = {
-        "carregando": False,
-        "a_bordo": {"amostras": [], "total_base": 0, "total_com_bonus": 0,
-                    "sistemas_exploracao": 0, "corpos_exploracao": 0},
-        "vendido": {"amostras": [
-            {"especie": "Aleoida Arcus", "variante": "v", "corpo": "A 1", "sistema": "A",
-             "quando": "2026-11-14T10:00:00Z", "valor": 7_000_000, "bonus_pago": False,
-             "previsao": "provavel", "acertou": False, "sessao": 1}],
-            "quantidade": 1, "total": 7_000_000, "exploracao_total": 0},
-        "perdido": {"amostras": 0, "sistemas": 0},
-        "medias": {"por_amostra": None, "por_planeta": None, "por_sessao": None},
-        "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 0,
-                      "mapeados": 0, "pisados": 0, "total_corpos": 0, "corpos": []},
-        "carreira": {"Organic_Data": 27, "Organic_Data_Profits": 439_500_000,
-                     "First_Logged": 25},
-    }
+    dados = _dados(
+        vendido={"amostras": [_venda(previsao="provavel", acertou=False, sessao=1)],
+                 "quantidade": 1, "total": 7_000_000, "exploracao_total": 0,
+                 "multiplicador_observado": None},
+        carreira={"Organic_Data": 27, "Organic_Data_Profits": 439_500_000,
+                  "First_Logged": 25})
 
     saida = _rodar_pintar_exploracao(dados)
+    vendido = _textos_modal("vendido", dados)
 
-    assert "Aleoida Arcus" in saida
-    assert "previsão errada" in saida
+    assert "Aleoida Arcus" in vendido
+    assert "previsão errada" in vendido
     assert "439,5 mi" in saida
+    assert "25 primeiras descobertas" in saida
 
 
 def test_pintar_exploracao_mostra_carregando():
@@ -536,49 +573,90 @@ def test_pintar_exploracao_mostra_carregando():
 
 def test_pintar_exploracao_avisa_quando_a_lista_foi_cortada():
     corpo = {"corpo": "A 1", "sistema": "A", "descobriu": True, "mapeou": False, "pisou": False}
-    venda = {"especie": "Aleoida Arcus", "variante": "v", "corpo": "A 1", "sistema": "A",
-             "quando": "t", "valor": 1, "bonus_pago": 0, "previsao": None,
-             "acertou": None, "sessao": None}
-    dados = {
-        "carregando": False,
-        "a_bordo": {"amostras": [], "total_base": 0, "total_com_bonus": 0,
-                    "sistemas_exploracao": 0, "corpos_exploracao": 0},
-        "vendido": {"amostras": [venda] * 50, "quantidade": 73, "total": 73,
-                    "exploracao_total": 0},
-        "perdido": {"amostras": 0, "sistemas": 0},
-        "medias": {"por_amostra": None, "por_planeta": None, "por_sessao": None},
-        "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 61,
-                      "mapeados": 0, "pisados": 0, "total_corpos": 61,
-                      "corpos": [corpo] * 50},
-        "carreira": None,
-    }
+    dados = _dados(
+        vendido={"amostras": [_venda()] * 50, "quantidade": 73, "total": 73,
+                 "exploracao_total": 0, "multiplicador_observado": None},
+        primeiros={"sistemas_descobertos": 0, "corpos_descobertos": 61,
+                   "mapeados": 0, "pisados": 0, "total_corpos": 61,
+                   "corpos": [corpo] * 50})
 
-    saida = _rodar_pintar_exploracao(dados)
-
-    assert "Amostras: 73" in saida
-    assert "mostrando 50 de 73" in saida
-    assert "mostrando 50 de 61" in saida
+    assert "73 amostras" in _rodar_pintar_exploracao(dados)
+    assert "mostrando 50 de 73" in _textos_modal("vendido", dados)
+    assert "mostrando 50 de 61" in _textos_modal("primeiros", dados)
 
 
 def test_pintar_exploracao_nao_avisa_corte_quando_cabe_tudo():
-    saida = _rodar_pintar_exploracao(json.loads(json.dumps(DADOS_SEM_CORTE)))
+    dados = _dados(primeiros={
+        "sistemas_descobertos": 0, "corpos_descobertos": 1, "mapeados": 0,
+        "pisados": 0, "total_corpos": 1,
+        "corpos": [{"corpo": "A 1", "sistema": "A", "descobriu": True,
+                    "mapeou": False, "pisou": False}]})
 
-    assert "mostrando" not in saida
+    assert "mostrando" not in _rodar_pintar_exploracao(dados)
+    assert "mostrando" not in _textos_modal("primeiros", dados)
 
 
-DADOS_SEM_CORTE = {
-    "carregando": False,
-    "a_bordo": {"amostras": [], "total_base": 0, "total_com_bonus": 0,
-                "sistemas_exploracao": 0, "corpos_exploracao": 0},
-    "vendido": {"amostras": [], "quantidade": 0, "total": 0, "exploracao_total": 0},
-    "perdido": {"amostras": 0, "sistemas": 0},
-    "medias": {"por_amostra": None, "por_planeta": None, "por_sessao": None},
-    "primeiros": {"sistemas_descobertos": 0, "corpos_descobertos": 1, "mapeados": 0,
-                  "pisados": 0, "total_corpos": 1,
-                  "corpos": [{"corpo": "A 1", "sistema": "A", "descobriu": True,
-                              "mapeou": False, "pisou": False}]},
-    "carreira": None,
-}
+def test_card_a_bordo_mostra_provaveis_com_e_sem_multiplicador():
+    dados = _dados(a_bordo={
+        "amostras": [], "total_base": 7_000_000, "total_com_bonus": 7_000_000,
+        "provaveis_quantidade": 1, "provaveis_base": 5_000_000,
+        "provaveis_com_bonus": 25_000_000,
+        "sistemas_exploracao": 0, "corpos_exploracao": 0})
+
+    saida = _rodar_pintar_exploracao(dados)
+
+    assert "prováveis (1): 5,0 mi → 25,0 mi" in saida
+    assert "×5, estimado" in saida
+
+
+def test_card_mostra_multiplicador_observado_quando_diverge():
+    dados = _dados(vendido={"amostras": [], "quantidade": 0, "total": 0,
+                            "exploracao_total": 0, "multiplicador_observado": 2.0})
+
+    saida = _rodar_pintar_exploracao(dados)
+
+    assert "observado ×2,0" in saida and "bônus observado ×2,0" in saida
+
+
+def test_card_carreira_some_sem_statistics():
+    assert "Carreira" not in _rodar_pintar_exploracao(_dados(carreira=None))
+
+
+def test_modal_aberto_e_reescrito_no_polling():
+    dados = _dados(vendido={"amostras": [_venda("Aleoida Arcus")], "quantidade": 1,
+                            "total": 1, "exploracao_total": 0,
+                            "multiplicador_observado": None})
+    dados2 = _dados(vendido={"amostras": [_venda("Especie Da Segunda Leitura")],
+                             "quantidade": 1, "total": 1, "exploracao_total": 0,
+                             "multiplicador_observado": None})
+
+    saida = _rodar_js("abrirModal('vendido'); elements['modal-corpo'].scrollTop = 120;"
+                      f"pintarExploracao({json.dumps(dados2)});"
+                      "console.log(elements['modal-exploracao'].open, elements['modal-corpo'].scrollTop,"
+                      " textos(elements['modal-corpo']).join('|'));", dados)
+
+    assert saida.startswith("true 120") and "Especie Da Segunda Leitura" in saida
+
+
+def test_falha_nao_mexe_no_modal():
+    dados = _dados(vendido={"amostras": [_venda("Aleoida Arcus")], "quantidade": 1,
+                            "total": 1, "exploracao_total": 0,
+                            "multiplicador_observado": None})
+
+    saida = _rodar_js("abrirModal('vendido'); falhaExploracao();"
+                      "console.log(elements['modal-exploracao'].open, textos(elements['modal-corpo']).join('|'));",
+                      dados)
+
+    assert saida.startswith("true") and "Aleoida Arcus" in saida
+
+
+def test_fechar_modal_zera_a_chave_aberta():
+    dados = _dados()
+
+    saida = _rodar_js("abrirModal('vendido'); fecharModal();"
+                      "console.log(elements['modal-exploracao'].open, modalAberto);", dados)
+
+    assert saida.strip() == "false null"
 
 
 def _rodar_atualizar(resposta_exploracao):
@@ -600,7 +678,7 @@ def _rodar_atualizar(resposta_exploracao):
             "}\n")
     programa = (stub + script +
                 "setTimeout(() => {\n"
-                "  console.log(textos(document.getElementById('exploracao')).join('|'));\n"
+                "  console.log(textos(document.getElementById('exploracao-cartoes')).join('|'));\n"
                 "  console.log('conexao=' + document.getElementById('conexao').textContent);\n"
                 "}, 0);\n")
     r = subprocess.run([node_bin], input=programa, capture_output=True,
