@@ -450,10 +450,12 @@ function novo(tag) {
     attrs: {},
     setAttribute(k, v) { this.attrs[k] = v; },
     removeAttribute(k) { delete this.attrs[k]; },
-    focus() { this.focado = true; },
+    focus() { this.focado = true; document.activeElement = this; },
+    contains(n) { return n === this || this.children.some(c => c.contains && c.contains(n)); },
   };
 }
 const document = {
+  activeElement: null,
   getElementById(id) { return elements[id] || (elements[id] = novo(id)); },
   createElement: novo,
 };
@@ -868,3 +870,22 @@ def test_precos_ordenar_nao_recria_a_busca():
     saida = _rodar_js("const b = elements['busca-precos']; ordenarPor('precos', 1);"
                       "console.log(elements['busca-precos'] === b);", _dados_precos())
     assert saida.strip() == "true"
+
+
+def test_foco_no_cabecalho_do_modal_sobrevive_ao_polling():
+    dados = _dados_vendido(5_000_000, 12_900_000)
+    saida = _rodar_js("abrirModal('vendido');"
+                      "const th = () => elements['modal-corpo'].children[0].children[1].children[0].children[0].children[2];"
+                      "th().focus(); const antigo = th();"
+                      f"pintarExploracao({json.dumps(dados)});"
+                      "console.log(th() !== antigo, document.activeElement === th());", dados)
+    assert saida.strip() == "true true"
+
+
+def test_poll_sem_foco_no_modal_nao_foca_cabecalho():
+    dados = _dados_vendido(5_000_000, 12_900_000)
+    saida = _rodar_js("abrirModal('vendido');"
+                      f"pintarExploracao({json.dumps(dados)});"
+                      "const t = elements['modal-corpo'].children[0].children[1];"
+                      "console.log(t.children[0].children[0].children.some(th => th.focado));", dados)
+    assert saida.strip() == "false"

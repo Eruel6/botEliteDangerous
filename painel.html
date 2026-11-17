@@ -257,6 +257,8 @@ function cabecalhoOrdenavel(chave, texto, i, classe) {
   th.tabIndex = 0;
   th.rotulo = texto;
   th.numerica = classe === "num";
+  th.chave = chave;
+  th.coluna = i;
   th.onclick = () => ordenarPor(chave, i);
   th.addEventListener("keydown", (e) => {
     if (e.key === "Enter" || e.key === " ") {
@@ -395,7 +397,12 @@ function preencherModal(chave) {
   const corpo = document.getElementById("modal-corpo");
   const rolagem = corpo.scrollTop;
   document.getElementById("modal-titulo").textContent = TITULO_MODAL[chave];
+  // O foco num cabeçalho ordenável não pode se perder quando o modal é reescrito.
+  const ativo = document.activeElement;
+  const focado = ativo && ativo.chave && corpo.contains(ativo) ? ativo : null;
   corpo.replaceChildren(conteudoModal(chave, dadosExploracao));
+  const novo = focado && (cabecalhosAtuais[focado.chave] || [])[focado.coluna];
+  if (novo) novo.focus();
   corpo.scrollTop = rolagem;
 }
 
