@@ -18,6 +18,9 @@
   table { border-collapse: collapse; width: 100%; margin-bottom: 24px; }
   th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #2b2219; }
   th { color: #9a8b76; font-weight: normal; font-size: 11px; text-transform: uppercase; }
+  th.ordenavel { cursor: pointer; user-select: none; }
+  th.ordenavel:hover { color: #ff8c1a; }
+  th.ordenavel:focus-visible { color: #ff8c1a; outline: 1px solid #ff8c1a; outline-offset: -1px; }
   .erro { color: #e05c5c; }
   .vazio { color: #6b5d4c; font-style: italic; }
   .abas { display: flex; gap: 8px; margin-bottom: 20px; }
@@ -214,21 +217,115 @@ function elemento(tag, texto, classe) {
   return el;
 }
 
-function tabelaTexto(cabecalho, linhas, numericas = []) {
+// Ordem de cada tabela ordenável: chave -> {coluna, desc}. Vive fora das
+// tabelas porque o modal é reescrito a cada leitura.
+const ordemTabelas = {};
+const cabecalhosAtuais = {};   // chave -> th[] da tabela desenhada por último
+
+function textoCelula(c) {
+  return c !== null && typeof c === "object" ? c.textContent : c;
+}
+
+function vazio(v) {
+  return v === null || v === undefined || v === "";
+}
+
+// Vazio sempre no fim, nos dois sentidos.
+function compararCelulas(a, b, desc) {
+  if (vazio(a) || vazio(b)) return vazio(a) === vazio(b) ? 0 : (vazio(a) ? 1 : -1);
+  const r = typeof a === "number" && typeof b === "number"
+    ? a - b : String(a).localeCompare(String(b), "pt-BR", { sensitivity: "base" });
+  return desc ? -r : r;
+}
+
+// Índices das linhas na ordem escolhida (ordem original se não há escolha).
+function indicesOrdenados(chave, valores) {
+  const idx = valores.map((_, i) => i);
+  const o = ordemTabelas[chave];
+  if (!o) return idx;
+  return idx.sort((i, j) =>
+    compararCelulas(valores[i][o.coluna], valores[j][o.coluna], o.desc) || i - j);
+}
+
+function rotuloCabecalho(chave, texto, i) {
+  const o = ordemTabelas[chave];
+  return o && o.coluna === i ? texto + (o.desc ? " ▼" : " ▲") : texto;
+}
+
+function cabecalhoOrdenavel(chave, texto, i, classe) {
+  const th = elemento("th", rotuloCabecalho(chave, texto, i), classe ? classe + " ordenavel" : "ordenavel");
+  th.tabIndex = 0;
+  th.rotulo = texto;
+  th.numerica = classe === "num";
+  th.onclick = () => ordenarPor(chave, i);
+  th.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      ordenarPor(chave, i, true);
+    }
+  });
+  const o = ordemTabelas[chave];
+  if (o && o.coluna === i) th.setAttribute("aria-sort", o.desc ? "descending" : "ascending");
+  return th;
+}
+
+// `opcoes.chave` torna a tabela ordenável; `opcoes.valores` (paralela a
+// `linhas`) traz o valor cru de cada célula para ordenar, senão vale o texto.
+// Uma célula pode ser um Element.
+function tabelaTexto(cabecalho, linhas, numericas = [], opcoes = {}) {
+  const chave = opcoes.chave;
   const t = elemento("table");
   const cab = elemento("tr");
-  cabecalho.forEach((c, i) => cab.appendChild(elemento("th", c, numericas.includes(i) ? "num" : undefined)));
+  const ths = cabecalho.map((c, i) => {
+    const classe = numericas.includes(i) ? "num" : undefined;
+    return chave ? cabecalhoOrdenavel(chave, c, i, classe) : elemento("th", c, classe);
+  });
+  ths.forEach(th => cab.appendChild(th));
+  if (chave) cabecalhosAtuais[chave] = ths;
   const thead = elemento("thead");
   thead.appendChild(cab);
   t.appendChild(thead);
   const corpo = elemento("tbody");
-  for (const linha of linhas) {
+  const valores = opcoes.valores || linhas.map(l => l.map(textoCelula));
+  const ordem = chave ? indicesOrdenados(chave, valores) : linhas.map((_, i) => i);
+  for (const k of ordem) {
     const tr = elemento("tr");
-    linha.forEach((c, i) => tr.appendChild(elemento("td", c, numericas.includes(i) ? "num" : undefined)));
+    tr.valores = valores[k];
+    linhas[k].forEach((c, i) => {
+      const td = elemento("td", undefined, numericas.includes(i) ? "num" : undefined);
+      if (c !== null && typeof c === "object") td.appendChild(c); else td.textContent = c;
+      tr.appendChild(td);
+    });
     corpo.appendChild(tr);
   }
   t.appendChild(corpo);
   return t;
+}
+
+// Primeiro clique: crescente no texto, decrescente no número; depois inverte.
+function ordenarPor(chave, coluna, teclado = false) {
+  const atual = ordemTabelas[chave];
+  if (atual && atual.coluna === coluna) {
+    atual.desc = !atual.desc;
+  } else {
+    const ths = cabecalhosAtuais[chave] || [];
+    ordemTabelas[chave] = { coluna, desc: !!(ths[coluna] && ths[coluna].numerica) };
+  }
+  if (chave === "precos") {
+    if (!corpoPrecos) return;
+    const trs = Array.from(corpoPrecos.children);
+    const idx = indicesOrdenados(chave, trs.map(tr => tr.valores));
+    corpoPrecos.replaceChildren(...idx.map(i => trs[i]));
+    cabecalhosAtuais[chave].forEach((th, i) => {
+      th.textContent = rotuloCabecalho(chave, th.rotulo, i);
+      if (i === coluna) th.setAttribute("aria-sort", ordemTabelas[chave].desc ? "descending" : "ascending");
+      else th.removeAttribute("aria-sort");
+    });
+  } else if (modalAberto === chave) {
+    preencherModal(chave);
+  }
+  const th = (cabecalhosAtuais[chave] || [])[coluna];
+  if (teclado && th) th.focus();
 }
 
 // As listas de vendidas e de primeiros vêm cortadas nas mais recentes.
@@ -259,7 +356,10 @@ function conteudoModal(chave, d) {
       ab.amostras.length ? tabelaTexto(["Espécie", "Planeta", "Base", "Bônus"],
         ab.amostras.map(a => [
           a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
-          a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus]), [2]) : null,
+          a.corpo, mi(a.preco_base), ROTULO_BONUS[a.bonus] || a.bonus]), [2],
+        { chave: "a_bordo", valores: ab.amostras.map(a => [
+          a.variante && !a.variante.includes(a.especie) ? `${a.especie} · ${a.variante}` : (a.variante || a.especie),
+          a.corpo, a.preco_base, ROTULO_BONUS[a.bonus] || a.bonus]) }) : null,
       `Dados de exploração: ${ab.sistemas_exploracao} sistemas, ${ab.corpos_exploracao} corpos`);
   }
   if (chave === "vendido") {
@@ -271,7 +371,11 @@ function conteudoModal(chave, d) {
         v.amostras.map(a => [
           a.especie, a.corpo, mi(a.valor),
           a.acertou === null || a.acertou === undefined ? "" :
-            (a.acertou ? "previsão certa" : "previsão errada")]), [2]) : null,
+            (a.acertou ? "previsão certa" : "previsão errada")]), [2],
+        { chave: "vendido", valores: v.amostras.map(a => [
+          a.especie, a.corpo, a.valor,
+          a.acertou === null || a.acertou === undefined ? "" :
+            (a.acertou ? "previsão certa" : "previsão errada")]) }) : null,
       [cortada(v.amostras.length, qtdVendidas),
        d.perdido && d.perdido.amostras
          ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
@@ -281,7 +385,8 @@ function conteudoModal(chave, d) {
   return corpoModal(
     `Descobrir sistema: ${p.sistemas_descobertos}   Descobrir corpo: ${p.corpos_descobertos}   Mapear: ${p.mapeados}   Pisar: ${p.pisados}`,
     p.corpos.length ? tabelaTexto(["Corpo", "Descobriu", "Mapeou", "Pisou"],
-      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)])) : null,
+      p.corpos.map(c => [c.corpo, marca(c.descobriu), marca(c.mapeou), marca(c.pisou)]),
+      [], { chave: "primeiros" }) : null,
     cortada(p.corpos.length, p.total_corpos ?? p.corpos.length));
 }
 
@@ -355,7 +460,8 @@ function pintarPrecos(d) {
   busca.oninput = filtrarPrecos;
   const tabela = tabelaTexto(
     ["Espécie", "Base", `Com bônus (×${d.multiplicador})`],
-    d.precos.map(p => [p.especie, mi(p.base), mi(p.com_bonus)]), [1, 2]);
+    d.precos.map(p => [p.especie, mi(p.base), mi(p.com_bonus)]), [1, 2],
+    { chave: "precos", valores: d.precos.map(p => [p.especie, p.base, p.com_bonus]) });
   corpoPrecos = tabela.children[1];
   const fonte = "fonte: ed-dsn.net / Canonn";
   const rodape = elemento("p", d.precos_atualizado_em

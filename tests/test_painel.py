@@ -449,6 +449,8 @@ function novo(tag) {
     addEventListener() {},
     attrs: {},
     setAttribute(k, v) { this.attrs[k] = v; },
+    removeAttribute(k) { delete this.attrs[k]; },
+    focus() { this.focado = true; },
   };
 }
 const document = {
@@ -804,3 +806,65 @@ def test_rodape_sem_data_mostra_so_a_fonte():
     saida = _rodar_js("console.log(textos(elements['exploracao-precos']).join('|'));",
                       _dados(precos=PRECOS))
     assert "fonte: ed-dsn.net / Canonn" in saida and "atualizado" not in saida
+
+
+def _dados_vendido(*valores):
+    amostras = [_venda(f"Esp{i}", valor=v) for i, v in enumerate(valores)]
+    return _dados(vendido={"amostras": amostras, "quantidade": len(amostras), "total": 0,
+                           "exploracao_total": 0, "multiplicador_observado": None})
+
+
+def _ordem_vendido(dados, extra):
+    saida = _rodar_js("abrirModal('vendido');" + extra + """
+const tabela = elements['modal-corpo'].children[0].children[1];
+console.log(JSON.stringify({
+  linhas: tabela.children[1].children.map(tr => tr.children.map(td => td.textContent)),
+  cab: tabela.children[0].children[0].children.map(th => th.textContent)}));""", dados)
+    return json.loads(saida)
+
+
+def test_ordenar_coluna_numerica_usa_valor_cru():
+    r = _ordem_vendido(_dados_vendido(5_000_000, 12_900_000, None), "ordenarPor('vendido', 2);")
+    assert [l[2] for l in r["linhas"]] == ["12,9 mi", "5,0 mi", "—"]
+
+
+def test_segundo_clique_inverte_e_vazio_continua_no_fim():
+    r = _ordem_vendido(_dados_vendido(5_000_000, 12_900_000, None),
+                       "ordenarPor('vendido', 2); ordenarPor('vendido', 2);")
+    assert [l[2] for l in r["linhas"]] == ["5,0 mi", "12,9 mi", "—"]
+
+
+def test_ordem_sobrevive_ao_polling():
+    dados = _dados_vendido(5_000_000, 12_900_000, 8_000_000)
+    r = _ordem_vendido(dados, f"ordenarPor('vendido', 2); pintarExploracao({json.dumps(dados)});")
+    assert [l[2] for l in r["linhas"]] == ["12,9 mi", "8,0 mi", "5,0 mi"]
+
+
+def test_ordenar_texto_ignora_acento_e_caixa():
+    dados = _dados(vendido=_dados_vendido()["vendido"] | {"amostras": [
+        _venda("zebra"), _venda("Éden"), _venda("abelha")], "quantidade": 3})
+    r = _ordem_vendido(dados, "ordenarPor('vendido', 0);")
+    assert [l[0] for l in r["linhas"]] == ["abelha", "Éden", "zebra"]
+
+
+def test_seta_indica_coluna_e_sentido():
+    r = _ordem_vendido(_dados_vendido(1, 2), "ordenarPor('vendido', 2);")
+    assert "▼" in r["cab"][2] and "▲" not in "".join(r["cab"])
+    r = _ordem_vendido(_dados_vendido(1, 2), "ordenarPor('vendido', 2); ordenarPor('vendido', 2);")
+    assert "▲" in r["cab"][2]
+
+
+def test_precos_ordenar_mantem_filtro():
+    precos = PRECOS + [{"especie": "Bacterium Aurasus", "base": 800_000, "com_bonus": 4_000_000},
+                       {"especie": "Bacterium Acies B", "base": 3_000_000, "com_bonus": 9_000_000}]
+    saida = _rodar_js("elements['busca-precos'].value = 'acies'; filtrarPrecos();"
+                      "ordenarPor('precos', 1);"
+                      "console.log(JSON.stringify(linhasVisiveis()));",
+                      _dados(precos=precos))
+    assert json.loads(saida) == ["Bacterium Acies B", "Bacterium Acies"]
+
+
+def test_precos_ordenar_nao_recria_a_busca():
+    saida = _rodar_js("const b = elements['busca-precos']; ordenarPor('precos', 1);"
+                      "console.log(elements['busca-precos'] === b);", _dados_precos())
+    assert saida.strip() == "true"
