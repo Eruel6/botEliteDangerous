@@ -458,6 +458,7 @@ const document = {
   activeElement: null,
   getElementById(id) { return elements[id] || (elements[id] = novo(id)); },
   createElement: novo,
+  createElementNS(ns, tag) { return novo(tag); },
 };
 function textos(el) {
   let r = [];
@@ -520,6 +521,7 @@ def _dados(**mudancas):
         "multiplicador": 5,
         "precos": [],
         "precos_atualizado_em": None,
+        "sessoes": [],
     }
     base.update(mudancas)
     return base
@@ -889,3 +891,51 @@ def test_poll_sem_foco_no_modal_nao_foca_cabecalho():
                       "const t = elements['modal-corpo'].children[0].children[1];"
                       "console.log(t.children[0].children[0].children.some(th => th.focado));", dados)
     assert saida.strip() == "false"
+
+
+def _sessoes():
+    return [{"sessao": "1", "quando": "2026-11-12T23:30:00Z", "vendido": 4_000_000, "a_bordo": 1_000_000},
+            {"sessao": "2", "quando": "2026-11-13T11:00:00Z", "vendido": 0, "a_bordo": 2_000_000},
+            {"sessao": "3", "quando": "2026-11-14T11:00:00Z", "vendido": 9_000_000, "a_bordo": 3_000_000}]
+
+
+def test_card_sessoes_aparece_com_dados_e_some_sem():
+    com = _rodar_pintar_exploracao(_dados(sessoes=_sessoes()))
+    assert "Sessões" in com and "3 sessões" in com and "melhor: 12,0 mi" in com
+    sem = _rodar_pintar_exploracao(_dados(sessoes=[]))
+    assert "Sessões" not in sem
+    ausente = _dados()
+    del ausente["sessoes"]
+    assert "Sessões" not in _rodar_pintar_exploracao(ausente)
+
+
+def test_grafico_uma_barra_por_sessao_com_tooltip():
+    saida = _rodar_js("""
+const svg = graficoSessoes(%s);
+const barras = svg.children.filter(g => g.attrs["class"] === "barra");
+console.log(barras.length);
+console.log(textos(barras[2]).join('|'));
+console.log(barras[2].children.filter(c => c.tag === "rect").map(c => c.attrs.fill).join('|'));
+console.log(textos(svg).join('|'));
+console.log(svg.attrs.width, svg.attrs.viewBox);
+console.log(TITULO_MODAL.sessoes);
+console.log(textos(conteudoModal('sessoes', %s)).join('|'));
+""" % (json.dumps(_sessoes()), json.dumps(_dados(sessoes=_sessoes()))), _dados(sessoes=_sessoes()))
+    linhas = saida.splitlines()
+    assert linhas[0] == "3"
+    assert "14/11/2026" in linhas[1] and "12,0 mi" not in linhas[1] and "9,0 mi" in linhas[1]
+    assert linhas[2] == "#ff8c1a|rgba(255,140,26,.35)"
+    assert "12/11" in linhas[3] and "14/11" in linhas[3]
+    assert linhas[4].startswith("100%")
+    assert linhas[5] == "Ganhos por sessão (coleta)"
+    assert "vendido" in linhas[6] and "a bordo (estimado)" in linhas[6]
+
+
+def test_grafico_tudo_zero_nao_quebra():
+    saida = _rodar_js("""
+const zeros = [{sessao: "1", quando: "2026-11-14T11:00:00Z", vendido: 0, a_bordo: 0}];
+const svg = graficoSessoes(zeros);
+const g = svg.children.find(c => c.attrs["class"] === "barra");
+console.log(g.children.filter(c => c.tag === "rect").map(c => c.attrs.height).join('|'));
+""")
+    assert saida.strip() == "0|0"

@@ -50,6 +50,11 @@
                   font: inherit; font-size: 18px; line-height: 1; padding: 2px 10px; cursor: pointer; }
   #modal-fechar:hover { color: #ff8c1a; border-color: #ff8c1a; }
   #modal-corpo { flex: 1; min-height: 0; overflow: auto; }
+  .barra rect { transition: filter .15s; }
+  .barra:hover rect { filter: brightness(1.25); }
+  .legenda { margin-top: 8px; color: #9a8b76; font-size: 12px; }
+  .leg-vendido { color: #ff8c1a; }
+  .leg-a-bordo { color: rgba(255,140,26,.35); }
   @keyframes entrada { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -339,7 +344,8 @@ let dadosExploracao = null;
 let alvoMouseDown = null;  // onde o mouse foi pressionado (fecha só se clique e press foram no fundo)
 let modalAberto = null;   // chave do card aberto, ou null
 
-const TITULO_MODAL = { a_bordo: "A bordo (perde-se se morrer)", vendido: "Vendido", primeiros: "Primeiro a..." };
+const TITULO_MODAL = { a_bordo: "A bordo (perde-se se morrer)", vendido: "Vendido", primeiros: "Primeiro a...",
+  sessoes: "Ganhos por sessão (coleta)" };
 
 function corpoModal(resumo, tabela, nota) {
   const b = elemento("div");
@@ -347,6 +353,46 @@ function corpoModal(resumo, tabela, nota) {
   if (tabela) b.appendChild(tabela);
   if (nota) b.appendChild(elemento("div", nota, "vazio"));
   return b;
+}
+
+// Datas lidas da própria string ISO: não dependem do fuso da máquina.
+function dataBR(iso, comAno) {
+  const [a, m, d] = String(iso).slice(0, 10).split("-");
+  return comAno ? `${d}/${m}/${a}` : `${d}/${m}`;
+}
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function noSvg(tag, attrs, texto) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  if (texto !== undefined) el.textContent = texto;
+  return el;
+}
+
+// Barras empilhadas por sessão: vendido (cheio) e a bordo estimado (claro).
+function graficoSessoes(sessoes) {
+  const LARG = 48, BARRA = 32, ALTURA = 160, TOPO = 8, ROTULO = 20;
+  const colunas = Math.max(sessoes.length, 6);   // poucas sessões não esticam o gráfico
+  const maior = Math.max(0, ...sessoes.map(s => s.vendido + s.a_bordo));
+  const svg = noSvg("svg", {
+    viewBox: `0 0 ${colunas * LARG} ${TOPO + ALTURA + ROTULO}`, width: "100%",
+    role: "img", "aria-label": "Ganhos por sessão de coleta" });
+  sessoes.forEach((s, i) => {
+    const x = i * LARG + (LARG - BARRA) / 2;
+    const hv = maior ? s.vendido / maior * ALTURA : 0;
+    const hb = maior ? s.a_bordo / maior * ALTURA : 0;
+    const base = TOPO + ALTURA;
+    const g = noSvg("g", { class: "barra" });
+    g.appendChild(noSvg("title", {},
+      `${dataBR(s.quando, true)} · vendido ${mi(s.vendido)} · a bordo ${mi(s.a_bordo)}`));
+    g.appendChild(noSvg("rect", { x, y: base - hv, width: BARRA, height: hv, fill: "#ff8c1a" }));
+    g.appendChild(noSvg("rect", { x, y: base - hv - hb, width: BARRA, height: hb,
+      fill: "rgba(255,140,26,.35)" }));
+    g.appendChild(noSvg("text", { x: x + BARRA / 2, y: base + 14, "text-anchor": "middle",
+      "font-size": 10, fill: "#9a8b76" }, dataBR(s.quando, false)));
+    svg.appendChild(g);
+  });
+  return svg;
 }
 
 function conteudoModal(chave, d) {
@@ -382,6 +428,15 @@ function conteudoModal(chave, d) {
        d.perdido && d.perdido.amostras
          ? `Perdido ao morrer: ${d.perdido.amostras} amostras, ${d.perdido.sistemas} sistemas` : null]
         .filter(Boolean).join(" · ") || null);
+  }
+  if (chave === "sessoes") {
+    const b = elemento("div");
+    b.appendChild(graficoSessoes(d.sessoes || []));
+    const leg = elemento("div", undefined, "legenda");
+    leg.appendChild(elemento("span", "■ vendido", "leg-vendido"));
+    leg.appendChild(elemento("span", " ■ a bordo (estimado)", "leg-a-bordo"));
+    b.appendChild(leg);
+    return b;
   }
   const p = d.primeiros;
   return corpoModal(
@@ -508,10 +563,17 @@ function pintarExploracao(d) {
       `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)}`,
       `${c.First_Logged || 0} primeiras descobertas`]]);
   }
-  cartoes.push(
-    ["primeiros", "Primeiro a…", [
+  const ss = d.sessoes || [];
+  const primeirosCartao = [
+    "primeiros", "Primeiro a…", [
       `sistemas ${p.sistemas_descobertos} · corpos ${p.corpos_descobertos}`,
-      `mapeou ${p.mapeados} · pisou ${p.pisados}`]],
+      `mapeou ${p.mapeados} · pisou ${p.pisados}`]];
+  cartoes.push(primeirosCartao);
+  if (ss.length) {
+    cartoes.push(["sessoes", "Sessões", [`${ss.length} sessões`,
+      `melhor: ${mi(Math.max(...ss.map(x => x.vendido + x.a_bordo)))}`]]);
+  }
+  cartoes.push(
     [null, "Médias", [
       `por amostra ${mi(m.por_amostra)}`, `por planeta ${mi(m.por_planeta)}`,
       `por sessão ${mi(m.por_sessao)}`]]);
