@@ -615,7 +615,43 @@ def test_card_mostra_multiplicador_observado_quando_diverge():
 
     saida = _rodar_pintar_exploracao(dados)
 
-    assert "observado ×2,0" in saida and "bônus observado ×2,0" in saida
+    assert "com bônus (×5, observado ×2,0)" in saida
+    assert "bônus observado ×2,0" in saida
+
+
+def test_card_a_bordo_volta_a_estimado_quando_observado_igual_ao_multiplicador():
+    dados = _dados(vendido={"amostras": [], "quantidade": 0, "total": 0,
+                            "exploracao_total": 0, "multiplicador_observado": 5.0})
+
+    saida = _rodar_pintar_exploracao(dados)
+
+    assert "com bônus (×5, estimado)" in saida
+    assert "com bônus (×5, observado" not in saida
+
+
+def test_repintar_mantem_os_nos_dos_cards_e_atualiza_o_texto():
+    dados2 = _dados(vendido={"amostras": [], "quantidade": 9, "total": 9_000_000,
+                             "exploracao_total": 0, "multiplicador_observado": None})
+
+    saida = _rodar_js(
+        "const antes = elements['exploracao-cartoes'].children.slice();"
+        f"pintarExploracao({json.dumps(dados2)});"
+        "const depois = elements['exploracao-cartoes'].children;"
+        "console.log(antes.length === depois.length && antes.every((n, i) => n === depois[i]),"
+        " textos(depois[1]).join('|'));", _dados())
+
+    assert saida.startswith("true") and "9 amostras · 9,0 mi" in saida
+
+
+def test_card_volta_a_ser_criado_depois_de_carregando():
+    saida = _rodar_js(
+        "const antes = elements['exploracao-cartoes'].children[0];"
+        "pintarExploracao({carregando: true});"
+        f"pintarExploracao({json.dumps(_dados())});"
+        "console.log(elements['exploracao-cartoes'].children[0] !== antes,"
+        " elements['exploracao-cartoes'].children.length);", _dados())
+
+    assert saida.startswith("true 4")
 
 
 def test_card_carreira_some_sem_statistics():

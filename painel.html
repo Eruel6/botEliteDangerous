@@ -33,15 +33,16 @@
   tbody tr:hover { background: #241c15; }
   td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
   dialog { background: #1e1813; color: #e8dcc8; border: 1px solid #3a2f24; border-radius: 6px;
-           padding: 16px 20px; max-width: min(900px, 92vw); max-height: 80vh; overflow: auto; }
-  dialog[open] { animation: entrada .15s ease-out; }
+           padding: 16px 20px; max-width: min(900px, 92vw); max-height: 80vh; overflow: hidden; }
+  dialog[open] { display: flex; flex-direction: column; animation: entrada .15s ease-out; }
   dialog::backdrop { background: rgba(0,0,0,.6); backdrop-filter: blur(3px); }
   .modal-cab { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
   .modal-cab h2 { margin: 0; font-size: 15px; color: #ff8c1a; }
   #modal-fechar { background: none; border: 1px solid #3a2f24; border-radius: 6px; color: #9a8b76;
                   font: inherit; font-size: 18px; line-height: 1; padding: 2px 10px; cursor: pointer; }
   #modal-fechar:hover { color: #ff8c1a; border-color: #ff8c1a; }
-  #modal-corpo { overflow: auto; }
+  .modal-cab { flex: none; margin-bottom: 8px; }
+  #modal-corpo { flex: 1; min-height: 0; overflow: auto; }
   @keyframes entrada { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { transition: none !important; animation: none !important; }
@@ -299,15 +300,23 @@ function fecharModal() {
   if (dialogo.open) dialogo.close();
 }
 
-function cartao(rotulo, linhas, chave) {
+// Os cards são criados uma vez e só têm o texto trocado a cada leitura: assim
+// o foco do teclado e o hover não se perdem quando o painel repinta.
+let cartoesFeitos = null;   // { chaves: "a_bordo,vendido,...", nos: [button|div] }
+
+function criarCartao(chave) {
   const c = elemento(chave ? "button" : "div", undefined, chave ? "cartao clicavel" : "cartao");
-  c.appendChild(elemento("div", rotulo, "rotulo"));
-  for (const l of linhas) c.appendChild(elemento("div", l, "linha"));
   if (chave) c.addEventListener("click", () => abrirModal(chave));
   return c;
 }
 
+function preencherCartao(c, rotulo, linhas) {
+  c.replaceChildren(elemento("div", rotulo, "rotulo"),
+    ...linhas.map(l => elemento("div", l, "linha")));
+}
+
 function falhaExploracao() {
+  cartoesFeitos = null;
   document.getElementById("exploracao-cartoes").replaceChildren(
     elemento("p", "não consegui ler a exploração", "vazio"));
 }
@@ -317,6 +326,7 @@ function pintarPrecos(d) {}   // a tabela de preços entra na próxima etapa
 function pintarExploracao(d) {
   const raiz = document.getElementById("exploracao-cartoes");
   if (d.carregando) {
+    cartoesFeitos = null;
     raiz.replaceChildren(elemento("p", "lendo os journals…", "vazio"));
     return;
   }
@@ -328,30 +338,35 @@ function pintarExploracao(d) {
     : `com bônus (×${d.multiplicador}, estimado)`;
 
   const cartoes = [
-    cartao("A bordo", [
+    ["a_bordo", "A bordo", [
       `${ab.amostras.length} amostras · base ${mi(ab.total_base)}`,
       `prováveis (${ab.provaveis_quantidade}): ${mi(ab.provaveis_base)} → ${mi(ab.provaveis_com_bonus)}`,
-      rotuloBonus], "a_bordo"),
-    cartao("Vendido", [
+      rotuloBonus]],
+    ["vendido", "Vendido", [
       `${v.quantidade ?? v.amostras.length} amostras · ${mi(v.total)}`,
       `exploração: ${mi(v.exploracao_total)}`,
-      ...(obs !== null && obs !== undefined ? [`bônus observado ×${obs.toFixed(1).replace(".", ",")}`] : [])],
-      "vendido"),
+      ...(obs !== null && obs !== undefined ? [`bônus observado ×${obs.toFixed(1).replace(".", ",")}`] : [])]],
   ];
   if (d.carreira) {
     const c = d.carreira;
-    cartoes.push(cartao("Carreira (jogo)", [
+    cartoes.push([null, "Carreira (jogo)", [
       `${c.Organic_Data || 0} amostras · ${mi(c.Organic_Data_Profits || 0)}`,
-      `${c.First_Logged || 0} primeiras descobertas`]));
+      `${c.First_Logged || 0} primeiras descobertas`]]);
   }
   cartoes.push(
-    cartao("Primeiro a…", [
+    ["primeiros", "Primeiro a…", [
       `sistemas ${p.sistemas_descobertos} · corpos ${p.corpos_descobertos}`,
-      `mapeou ${p.mapeados} · pisou ${p.pisados}`], "primeiros"),
-    cartao("Médias", [
+      `mapeou ${p.mapeados} · pisou ${p.pisados}`]],
+    [null, "Médias", [
       `por amostra ${mi(m.por_amostra)}`, `por planeta ${mi(m.por_planeta)}`,
-      `por sessão ${mi(m.por_sessao)}`]));
-  raiz.replaceChildren(...cartoes);
+      `por sessão ${mi(m.por_sessao)}`]]);
+
+  const chaves = cartoes.map(c => c[1]).join(",");
+  if (!cartoesFeitos || cartoesFeitos.chaves !== chaves) {
+    cartoesFeitos = { chaves, nos: cartoes.map(c => criarCartao(c[0])) };
+    raiz.replaceChildren(...cartoesFeitos.nos);
+  }
+  cartoes.forEach(([, rotulo, linhas], i) => preencherCartao(cartoesFeitos.nos[i], rotulo, linhas));
 
   if (modalAberto !== null) preencherModal(modalAberto);
   pintarPrecos(d);
