@@ -50,7 +50,7 @@ Para o gráfico: SVG desenhado à mão no JS, sem biblioteca (o painel não usa 
 ```
 
 - Os 21 gêneros da tabela de preços: Aleoida, Amphora Plant, Anemone, Bacterium, Bark Mounds, Brain Tree, Cactoida, Clypeus, Concha, Crystalline Shards, Electricae, Fonticulua, Frutexa, Fumerola, Fungoida, Osseus, Recepta, Sinuous Tubers, Stratum, Tubus, Tussock.
-- `wiki`: título da página na Fandom. Testado: `Bark Mound` (singular); `Crystalline Shards` e `Sinuous Tubers` não existem e ficam `null` (ficha sem foto, link para a busca da wiki).
+- `wiki`: título da página na Fandom. Testado: `Bark Mound`, `Crystalline Shard` e `Sinuous Tuber` ficam no singular. Se um gênero tiver `wiki: null`, a ficha fica sem foto, com link para a busca da wiki.
 - `distancia_m` e `fonte_distancia`:
   - `"wiki"` quando a página da wiki traz o valor. Lidos em 2026-11-17: Aleoida 200, Amphora Plant 100, Cactoida 300, Clypeus 150, Concha 150, Fonticulua 500, Frutexa 150, Fungoida 300, Osseus 800, Stratum 500, Tubus 800, Tussock 200.
   - `"comunidade"` para os demais, com os valores difundidos pela comunidade: Bacterium 500, Electricae 1000, Fumerola 100, Recepta 150, Anemone 100, Bark Mounds 100, Brain Tree 100, Crystalline Shards 100, Sinuous Tubers 100.

@@ -17,7 +17,7 @@ def test_json_tem_os_21_generos_completos():
         assert info["fonte_distancia"] in ("wiki", "comunidade")
     assert g["Osseus"]["distancia_m"] == 800 and g["Osseus"]["fonte_distancia"] == "wiki"
     assert g["Electricae"]["distancia_m"] == 1000 and g["Electricae"]["fonte_distancia"] == "comunidade"
-    assert g["Bark Mounds"]["wiki"] == "Bark Mound" and g["Crystalline Shards"]["wiki"] is None
+    assert g["Bark Mounds"]["wiki"] == "Bark Mound" and g["Crystalline Shards"]["wiki"] == "Crystalline Shard"
 
 
 def test_todas_as_96_especies_da_tabela_tem_genero():

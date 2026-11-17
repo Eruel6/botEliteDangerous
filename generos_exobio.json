@@ -10,13 +10,13 @@
       "wiki": "Amphora Plant",
       "distancia_m": 100,
       "fonte_distancia": "comunidade",
-      "descricao": "Planta de formato de ânfora, com haste e copa em forma de vaso. Costuma ser vista em planetas com atividade geológica."
+      "descricao": "Crescimentos esverdeados em forma de ânfora, com haste tubular. Aparecem em planetas sem atmosfera, ricos em metal, em sistemas de estrela tipo A."
     },
     "Anemone": {
       "wiki": "Anemone",
       "distancia_m": 100,
       "fonte_distancia": "comunidade",
-      "descricao": "Estrutura com ramos que lembram uma anêmona-do-mar. Cresce em planetas de atmosfera fina."
+      "descricao": "Estrutura redonda e gomada, parecida com casca de ouriço-do-mar (os exploradores a chamam de \"abóbora espacial\"). Aparece em planetas sem atmosfera, perto de estrelas quentes dos tipos O e B."
     },
     "Bacterium": {
       "wiki": "Bacterium",
@@ -28,13 +28,13 @@
       "wiki": "Bark Mound",
       "distancia_m": 100,
       "fonte_distancia": "comunidade",
-      "descricao": "Montes com aspecto de casca de árvore, cheios de rugas. Costumam ficar perto de nebulosas e de geologia ativa."
+      "descricao": "Torres cônicas e altas, com crescimentos pelas laterais. Aparecem em planetas sem atmosfera e com vulcanismo, perto de nebulosas."
     },
     "Brain Tree": {
       "wiki": "Brain Tree",
       "distancia_m": 100,
       "fonte_distancia": "comunidade",
-      "descricao": "Árvore de tronco curto, com copa enrugada que lembra um cérebro. Costuma ser vista em planetas com atividade geológica."
+      "descricao": "Forma de árvore com estruturas parecidas com um cérebro na ponta dos galhos. Aparece em planetas sem atmosfera e com vulcanismo."
     },
     "Cactoida": {
       "wiki": "Cactoida",
@@ -46,19 +46,19 @@
       "wiki": "Clypeus",
       "distancia_m": 150,
       "fonte_distancia": "wiki",
-      "descricao": "Placas largas em forma de escudo, que se espalham pelo chão. Ocorrem em planetas quentes e de atmosfera fina."
+      "descricao": "Placas largas em forma de escudo, que se espalham pelo chão. Ocorrem em planetas rochosos de atmosfera fina."
     },
     "Concha": {
       "wiki": "Concha",
       "distancia_m": 150,
       "fonte_distancia": "wiki",
-      "descricao": "Estruturas que lembram conchas fechadas, quase coladas ao solo. Aparecem em planetas rochosos."
+      "descricao": "Estruturas que lembram conchas fechadas, quase coladas ao solo. Aparecem em terreno rochoso e colinas, em planetas de atmosfera fina."
     },
     "Crystalline Shards": {
-      "wiki": null,
+      "wiki": "Crystalline Shard",
       "distancia_m": 100,
       "fonte_distancia": "comunidade",
-      "descricao": "Cristais pontiagudos que brotam do solo em agrupamentos. Costumam ficar em planetas gelados ou rochosos, em regiões de brilho forte."
+      "descricao": "Cristais pontiagudos que brotam do solo em agrupamentos. Crescem em planetas sem atmosfera e com vulcanismo, bem longe da estrela principal (mais de 12.000 ls)."
     },
     "Electricae": {
       "wiki": "Electricae",
@@ -88,7 +88,7 @@
       "wiki": "Fungoida",
       "distancia_m": 300,
       "fonte_distancia": "wiki",
-      "descricao": "Formas que lembram cogumelos, com chapéu e haste. Aparecem em planetas de atmosfera com gases como amônia ou argônio."
+      "descricao": "Formas que lembram cogumelos, com chapéu e haste. Crescem em encostas de montanhas, em planetas de atmosfera fina."
     },
     "Osseus": {
       "wiki": "Osseus",
@@ -100,19 +100,19 @@
       "wiki": "Recepta",
       "distancia_m": 150,
       "fonte_distancia": "comunidade",
-      "descricao": "Bolsas ou receptáculos que se abrem para cima, de cores vivas. Costumam aparecer em planetas de atmosfera rica em enxofre."
+      "descricao": "Organismo dentro de uma esfera translúcida, suspensa acima do solo. Aparece em planetas de atmosfera fina de dióxido de enxofre."
     },
     "Sinuous Tubers": {
-      "wiki": null,
+      "wiki": "Sinuous Tuber",
       "distancia_m": 100,
       "fonte_distancia": "comunidade",
-      "descricao": "Tubérculos sinuosos que serpenteiam pelo solo. Costumam ficar perto de geologia ativa."
+      "descricao": "Tubos sinuosos de cores vivas que serpenteiam pelo solo (apelidados de \"vermes tubulares\"). Aparecem em planetas sem atmosfera e com vulcanismo."
     },
     "Stratum": {
       "wiki": "Stratum",
       "distancia_m": 500,
       "fonte_distancia": "wiki",
-      "descricao": "Crosta em placas, como um tapete duro sobre a rocha. Cresce em planetas rochosos quentes."
+      "descricao": "Crosta em placas, como um tapete duro sobre a rocha. Cresce em planetas rochosos de atmosfera fina."
     },
     "Tubus": {
       "wiki": "Tubus",
